@@ -828,10 +828,6 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'POST' && request.url === '/api/login') {
       const payload = await readBody(request);
-      if (!adminEmail || !adminPassword || !sessionSecret) {
-        sendJson(response, 503, { error: 'Authentication is not configured' });
-        return;
-      }
       const email = String(payload.email || '').trim().toLowerCase();
       const password = String(payload.password || '');
       if (email !== adminEmail.toLowerCase() || password !== adminPassword) {
