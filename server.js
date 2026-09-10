@@ -11,8 +11,8 @@ require('dotenv').config();
 const port = Number(process.env.PORT || 4176);
 const apiToken = process.env.NVP_API_TOKEN || '';
 const smartHomePushToken = process.env.NVP_SMART_HOME_PUSH_TOKEN || apiToken;
-let adminEmail = process.env.NVP_ADMIN_EMAIL || 'admin';
-let adminPassword = process.env.NVP_ADMIN_PASSWORD || 'admin';
+let adminEmail = process.env.NVP_ADMIN_EMAIL || 'admin@phugialand.vn';
+let adminPassword = process.env.NVP_ADMIN_PASSWORD || 'Phugialand@123';
 const sessionSecret = process.env.NVP_SESSION_SECRET || apiToken || crypto.randomBytes(32).toString('hex');
 const bankWebhookSecret = process.env.NVP_BANK_WEBHOOK_SECRET || '';
 const vapidPublicKey = process.env.NVP_VAPID_PUBLIC_KEY || '';
@@ -116,7 +116,7 @@ function isAuthenticated(request) {
 }
 
 function isDefaultAdministratorPassword() {
-  return adminEmail === 'admin' && adminPassword === 'admin';
+  return adminEmail === 'admin@phugialand.vn' && adminPassword === 'Phugialand@123';
 }
 
 function getTenantEmail(request) {
