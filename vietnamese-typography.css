@@ -12,3 +12,37 @@ body {
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
+
+.apartment-record {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.apartment-record-content {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 5px;
+}
+
+.apartment-record-content > span,
+.apartment-record-content > small {
+  display: block;
+  line-height: 1.45;
+}
+
+.apartment-record-content > span {
+  overflow-wrap: anywhere;
+}
+
+.apartment-record .catalog-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+@media (max-width: 520px) {
+  .apartment-record .catalog-actions {
+    width: 100%;
+  }
+}

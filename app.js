@@ -528,7 +528,7 @@ function openApartmentManager() {
   }
   const statusLabels = { empty: 'Đang trống', reserved: 'Đang cọc', rented: 'Đang thuê', inactive: 'Ngừng hoạt động' };
   const options = building.apartments.length
-    ? building.apartments.map((apartment, index) => `<article class="modal-option apartment-record">${apartment.image ? `<img src="${escapeHtml(apartment.image)}" alt="${escapeHtml(apartment.title || apartment.name)}">` : ''}<div><span>${escapeHtml(apartment.title || apartment.name)}</span><small>${propertyTypes[apartment.propertyType || 'apartment']} · ${escapeHtml(apartment.name)} · ${statusLabels[apartment.status] || 'Đang trống'} · ${apartment.beds} giường${apartment.description ? ` · ${escapeHtml(apartment.description)}` : ''}</small></div><div class="catalog-actions"><button type="button" data-apartment-edit="${index}">Sửa</button><button type="button" data-apartment-delete="${index}">Xóa</button></div></article>`).join('')
+    ? building.apartments.map((apartment, index) => `<article class="modal-option apartment-record">${apartment.image ? `<img src="${escapeHtml(apartment.image)}" alt="${escapeHtml(apartment.title || apartment.name)}">` : ''}<div class="apartment-record-content"><span>${escapeHtml(apartment.title || apartment.name)}</span><small>${propertyTypes[apartment.propertyType || 'apartment']} · ${escapeHtml(apartment.name)} · ${statusLabels[apartment.status] || 'Đang trống'} · ${apartment.beds} giường${apartment.description ? ` · ${escapeHtml(apartment.description)}` : ''}</small></div><div class="catalog-actions"><button type="button" data-apartment-edit="${index}">Sửa</button><button type="button" data-apartment-delete="${index}">Xóa</button></div></article>`).join('')
     : '<p class="empty-state">Tòa nhà này chưa có căn hộ hoặc văn phòng.</p>';
   openModal(`Không gian cho thuê - ${building.name}`, `<div class="modal-list">${options}</div><button class="modal-secondary" type="button" data-modal-add-apartment>＋ Thêm căn hộ/văn phòng</button>`, () => {
     document.querySelector('[data-modal-add-apartment]').addEventListener('click', openApartmentForm);
@@ -1708,5 +1708,5 @@ document.addEventListener('keydown', (event) => {
 });
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=56').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=57').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
 }
