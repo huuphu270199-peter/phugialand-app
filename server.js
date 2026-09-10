@@ -85,7 +85,7 @@ const loginFiles = new Set(['login.html', 'login.css', 'vp-theme.css', 'vietname
 const tenantFiles = new Set(['tenant.html', 'tenant.css', 'vietnamese-typography.css', 'tenant.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
 
 function getRequestHost(request) {
-  return String(request.headers['x-forwarded-host'] || request.headers.host || '').split(',')[0].trim().split(':')[0].toLowerCase();
+  return String(request.headers.host || '').split(':')[0].toLowerCase();
 }
 
 function isApplicationHost(request) {
