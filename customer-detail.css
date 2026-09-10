@@ -26,6 +26,20 @@
   background: var(--line);
 }
 
+.customer-detail-summary,
+.customer-detail-balance {
+  display: grid;
+  gap: 5px;
+}
+
+.customer-detail-summary strong,
+.customer-detail-balance strong,
+.customer-detail-summary span,
+.customer-detail-balance span {
+  display: block;
+  line-height: 1.4;
+}
+
 .customer-detail-grid > div {
   display: grid;
   gap: 4px;
