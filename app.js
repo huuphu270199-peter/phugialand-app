@@ -1708,5 +1708,5 @@ document.addEventListener('keydown', (event) => {
 });
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=55').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=56').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
 }

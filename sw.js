@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phu-gia-land-v55';
+const CACHE_NAME = 'phu-gia-land-v56';
 const APP_SHELL = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const APP_SHELL = [
   './redesign.css',
   './crud.css',
   './utility-manager.css',
+  './vietnamese-typography.css',
   './building-form.css',
   './building-manager.css',
   './customer-manager.css',

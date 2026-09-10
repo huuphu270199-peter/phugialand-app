@@ -64,10 +64,10 @@ const mimeTypes = {
   '.pdf': 'application/pdf',
   '.ico': 'image/x-icon'
 };
-const appFiles = new Set(['index.html', 'styles.css', 'modal.css', 'enhancements.css', 'redesign.css', 'crud.css', 'utility-manager.css', 'building-form.css', 'building-manager.css', 'customer-manager.css', 'customer-detail.css', 'vp-theme.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
-const websiteFiles = new Set(['public.html', 'public.css', 'vp-theme.css', 'public.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
-const loginFiles = new Set(['login.html', 'login.css', 'vp-theme.css', 'login.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
-const tenantFiles = new Set(['tenant.html', 'tenant.css', 'tenant.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
+const appFiles = new Set(['index.html', 'styles.css', 'modal.css', 'enhancements.css', 'redesign.css', 'crud.css', 'utility-manager.css', 'building-form.css', 'building-manager.css', 'customer-manager.css', 'customer-detail.css', 'vp-theme.css', 'vietnamese-typography.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
+const websiteFiles = new Set(['public.html', 'public.css', 'vp-theme.css', 'vietnamese-typography.css', 'public.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
+const loginFiles = new Set(['login.html', 'login.css', 'vp-theme.css', 'vietnamese-typography.css', 'login.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
+const tenantFiles = new Set(['tenant.html', 'tenant.css', 'vietnamese-typography.css', 'tenant.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
 
 function isApplicationHost(request) {
   const host = (request.headers.host || '').split(':')[0].toLowerCase();

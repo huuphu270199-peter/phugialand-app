@@ -1,0 +1,14 @@
+html,
+body,
+button,
+input,
+select,
+textarea,
+option {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+body {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
