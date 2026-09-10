@@ -6,11 +6,13 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "migrate:mysql": "node migrate-file-state-to-mysql.js",
     "tuya:energy": "node tuya-energy-listener.js"
   },
   "dependencies": {
     "@tuya/tuya-connector-nodejs": "^2.1.2",
     "dotenv": "^17.4.2",
+    "mysql2": "^3.24.4",
     "web-push": "^3.6.7"
   },
   "optionalDependencies": {

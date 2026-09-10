@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const webpush = require('web-push');
+const mysql = require('mysql2/promise');
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
 require('dotenv').config();
@@ -24,6 +25,18 @@ const dataDirectory = path.join(root, 'data');
 const dataFile = path.join(dataDirectory, 'state.json');
 const documentDirectory = path.join(dataDirectory, 'documents');
 const mediaDirectory = path.join(dataDirectory, 'media');
+const databaseSettings = {
+  host: process.env.DB_HOST || '',
+  port: Number(process.env.DB_PORT || 3306),
+  database: process.env.DB_NAME || '',
+  user: process.env.DB_USER || '',
+  password: process.env.DB_PASSWORD || ''
+};
+const usingMySqlState = Boolean(databaseSettings.host || databaseSettings.database || databaseSettings.user || databaseSettings.password);
+if (usingMySqlState && (!databaseSettings.host || !databaseSettings.database || !databaseSettings.user || !databaseSettings.password)) {
+  throw new Error('DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD are all required for MySQL state storage');
+}
+const databasePool = usingMySqlState ? mysql.createPool({ ...databaseSettings, waitForConnections: true, connectionLimit: 5, charset: 'utf8mb4' }) : null;
 const tuyaSingaporeEndpoint = 'https://openapi-sg.iotbing.com';
 const tuyaSingaporeMqEndpoint = 'wss://mqe.tuyaus.com:8285/';
 const administrativeUnitsUrl = 'https://provinces.open-api.vn/api/v2/?depth=2';
@@ -73,7 +86,7 @@ const tenantFiles = new Set(['tenant.html', 'tenant.css', 'vietnamese-typography
 
 function isApplicationHost(request) {
   const host = (request.headers.host || '').split(':')[0].toLowerCase();
-  return host === 'phugialand.vn' || host === 'www.phugialand.vn' || host === 'app.phugialand.vn' || host === 'app.localhost' || host === 'localhost' || host === '127.0.0.1';
+  return host === 'app.phugialand.vn' || host === 'app.localhost' || host === 'localhost' || host === '127.0.0.1';
 }
 
 function isTenantHost(request) {
@@ -117,6 +130,12 @@ function securityHeaders() {
 }
 
 async function readState() {
+  if (databasePool) {
+    const [rows] = await databasePool.query('SELECT state_key, state_value, updated_at FROM app_state');
+    const state = Object.fromEntries(rows.map((row) => [row.state_key, row.state_value]));
+    const updatedAt = rows.reduce((latest, row) => !latest || new Date(row.updated_at) > new Date(latest) ? row.updated_at : latest, null);
+    return { version: 1, updatedAt: updatedAt ? new Date(updatedAt).toISOString() : null, state };
+  }
   try {
     return JSON.parse(await fs.readFile(dataFile, 'utf8'));
   } catch (error) {
@@ -126,6 +145,23 @@ async function readState() {
 }
 
 async function writeState(state) {
+  if (databasePool) {
+    const connection = await databasePool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute('DELETE FROM app_state');
+      for (const [key, value] of Object.entries(state.state || {})) {
+        await connection.execute('INSERT INTO app_state (state_key, state_value) VALUES (?, ?)', [key, value ?? null]);
+      }
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    return;
+  }
   await fs.mkdir(dataDirectory, { recursive: true });
   const temporaryFile = `${dataFile}.${crypto.randomUUID()}.tmp`;
   await fs.writeFile(temporaryFile, JSON.stringify(state, null, 2), 'utf8');
