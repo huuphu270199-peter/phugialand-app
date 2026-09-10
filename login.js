@@ -14,11 +14,9 @@ form.addEventListener('submit', async (event) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: formData.get('email'), password: formData.get('password') })
     });
-    if (!response.ok) {
-      const payload = await response.json();
-      throw new Error(payload.error || 'Không thể đăng nhập');
-    }
-    window.location.assign('/');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Không thể đăng nhập');
+    window.location.assign(payload.passwordChangeRequired ? '/?change-password=required' : '/');
   } catch (error) {
     errorMessage.textContent = error.message === 'Invalid credentials' ? 'Email hoặc mật khẩu không đúng.' : 'Không thể đăng nhập. Kiểm tra cấu hình máy chủ.';
     errorMessage.hidden = false;

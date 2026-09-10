@@ -11,8 +11,8 @@ require('dotenv').config();
 const port = Number(process.env.PORT || 4176);
 const apiToken = process.env.NVP_API_TOKEN || '';
 const smartHomePushToken = process.env.NVP_SMART_HOME_PUSH_TOKEN || apiToken;
-let adminEmail = process.env.NVP_ADMIN_EMAIL || '';
-let adminPassword = process.env.NVP_ADMIN_PASSWORD || '';
+let adminEmail = process.env.NVP_ADMIN_EMAIL || 'admin';
+let adminPassword = process.env.NVP_ADMIN_PASSWORD || 'admin';
 const sessionSecret = process.env.NVP_SESSION_SECRET || apiToken;
 const bankWebhookSecret = process.env.NVP_BANK_WEBHOOK_SECRET || '';
 const vapidPublicKey = process.env.NVP_VAPID_PUBLIC_KEY || '';
@@ -109,6 +109,10 @@ function isAuthenticated(request) {
   const session = Buffer.from(cookies.nvp_session || '');
   const signature = Buffer.from(expected);
   return session.length === signature.length && crypto.timingSafeEqual(session, signature);
+}
+
+function isDefaultAdministratorPassword() {
+  return adminEmail === 'admin' && adminPassword === 'admin';
 }
 
 function getTenantEmail(request) {
@@ -503,6 +507,15 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, { ok: true, service: 'phu-gia-land-api' });
       return;
     }
+    if (request.method === 'GET' && request.url === '/api/session') {
+      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      sendJson(response, 200, { authenticated: true, passwordChangeRequired: isDefaultAdministratorPassword() });
+      return;
+    }
+    if (isAuthenticated(request) && isDefaultAdministratorPassword() && !['/api/admin-password', '/api/logout'].includes(request.url)) {
+      sendJson(response, 403, { error: 'Password change is required before using the application' });
+      return;
+    }
     if (request.method === 'GET' && request.url === '/api/push-config') {
       sendJson(response, 200, { enabled: Boolean(vapidPublicKey && vapidPrivateKey), publicKey: vapidPublicKey });
       return;
@@ -827,7 +840,7 @@ const server = http.createServer(async (request, response) => {
       }
       const secure = request.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
       response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...securityHeaders(), 'Set-Cookie': `nvp_session=${encodeURIComponent(signSession(adminEmail, 'manager'))}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${secure}` });
-      response.end(JSON.stringify({ ok: true, role: 'manager' }));
+      response.end(JSON.stringify({ ok: true, role: 'manager', passwordChangeRequired: isDefaultAdministratorPassword() }));
       return;
     }
     if (request.method === 'POST' && request.url === '/api/admin-password') {
