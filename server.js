@@ -84,13 +84,17 @@ const websiteFiles = new Set(['public.html', 'public.css', 'vp-theme.css', 'viet
 const loginFiles = new Set(['login.html', 'login.css', 'vp-theme.css', 'vietnamese-typography.css', 'login.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
 const tenantFiles = new Set(['tenant.html', 'tenant.css', 'vietnamese-typography.css', 'tenant.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
 
+function getRequestHost(request) {
+  return String(request.headers['x-forwarded-host'] || request.headers.host || '').split(',')[0].trim().split(':')[0].toLowerCase();
+}
+
 function isApplicationHost(request) {
-  const host = (request.headers.host || '').split(':')[0].toLowerCase();
+  const host = getRequestHost(request);
   return host === 'app.phugialand.vn' || host === 'app.localhost' || host === 'localhost' || host === '127.0.0.1';
 }
 
 function isTenantHost(request) {
-  const host = (request.headers.host || '').split(':')[0].toLowerCase();
+  const host = getRequestHost(request);
   return host === 'tenant.phugialand.vn' || host === 'tenant.localhost';
 }
 
