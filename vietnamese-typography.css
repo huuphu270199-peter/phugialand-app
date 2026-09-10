@@ -41,7 +41,43 @@ body {
   gap: 6px;
 }
 
-@media (max-width: 520px) {
+.modal.building-form-modal {
+  width: min(94vw, 820px);
+  max-height: min(92vh, 760px);
+}
+
+.building-form-modal .modal-content {
+  padding: 24px;
+}
+
+.building-form-modal .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 22px;
+}
+
+.building-form-modal .form-section-title {
+  padding-inline: 20px;
+}
+
+@media (max-width: 700px) {
+  .modal.building-form-modal {
+    width: calc(100vw - 24px);
+  }
+
+  .building-form-modal .modal-content {
+    padding: 16px;
+  }
+
+  .building-form-modal .form-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .building-form-modal .form-section-title {
+    padding-inline: 16px;
+  }
+
   .apartment-record .catalog-actions {
     width: 100%;
   }

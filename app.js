@@ -169,6 +169,7 @@ function showToast(message) {
 
 function openModal(title, content, onReady) {
   lastFocusedElement = document.activeElement;
+  modalBackdrop.querySelector('[data-modal]').classList.remove('modal-wide', 'utility-modal', 'building-form-modal');
   modalTitle.textContent = title;
   modalContent.innerHTML = content;
   modalBackdrop.hidden = false;
@@ -305,6 +306,7 @@ function openBuildingForm(buildingToEdit = null) {
     <section class="form-section"><div class="form-section-title"><strong>Cấu hình thanh toán &amp; dịch vụ</strong></div><div class="form-grid"><label>Tài khoản gạch nợ tự động<select name="debtAccount"><option value="">Chọn</option><option ${settings.debtAccount === 'bank' ? 'selected' : ''} value="bank">Tài khoản ngân hàng</option><option ${settings.debtAccount === 'cash' ? 'selected' : ''} value="cash">Tài khoản tiền mặt</option></select></label><label>Ngày thanh toán hằng tháng<input name="paymentDay" type="number" min="1" max="31" value="${Number(settings.paymentDay || 5)}"></label><label>Ngân hàng nhận tiền<input name="bankName" maxlength="80" value="${escapeHtml(settings.bankName || '')}" placeholder="Ví dụ: MB Bank"></label><label>Mã BIN ngân hàng<input name="bankBin" inputmode="numeric" maxlength="12" value="${escapeHtml(settings.bankBin || '')}" placeholder="Ví dụ: 970422"></label><label>Số tài khoản<input name="bankNumber" inputmode="numeric" maxlength="30" value="${escapeHtml(settings.bankNumber || '')}" placeholder="Nhập số tài khoản"></label><label>Tên chủ tài khoản<input name="bankHolder" maxlength="100" value="${escapeHtml(settings.bankHolder || '')}" placeholder="Tên chủ tài khoản"></label><label>Đơn giá điện (đ/kWh)<input name="electricityRate" type="number" min="0" value="${Number(settings.electricityRate || 0)}"></label><label>Đơn giá nước (đ/khối)<input name="waterRate" type="number" min="0" value="${Number(settings.waterRate || 0)}"></label><label>Phí quản lý (đ/tháng)<input name="managementFee" type="number" min="0" value="${Number(settings.managementFee || 0)}"></label><label>Cấu hình hóa đơn điện tử<select name="eInvoice"><option value="default" ${settings.eInvoice !== 'disabled' ? 'selected' : ''}>Dùng cấu hình mặc định</option><option value="disabled" ${settings.eInvoice === 'disabled' ? 'selected' : ''}>Không sử dụng</option></select></label><label>Mẫu in hóa đơn<select name="invoiceTemplate"><option value="">Chọn</option><option value="default" ${settings.invoiceTemplate === 'default' ? 'selected' : ''}>Mẫu mặc định</option></select></label><label>Mẫu hợp đồng<select name="contractTemplate"><option value="">Chọn</option><option value="default" ${settings.contractTemplate === 'default' ? 'selected' : ''}>Mẫu mặc định</option></select></label></div></section>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">Lưu</button></div>
   </form>`, () => {
+    document.querySelector('[data-modal]').classList.add('building-form-modal');
     const buildingForm = document.querySelector('[data-building-form]');
     const waterRateField = buildingForm.querySelector('[name="waterRate"]');
     const paymentDayField = buildingForm.querySelector('[name="paymentDay"]');
@@ -1708,5 +1710,5 @@ document.addEventListener('keydown', (event) => {
 });
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=58').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=59').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
 }
