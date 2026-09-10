@@ -1,0 +1,74 @@
+.modal.utility-modal {
+  width: min(96vw, 940px);
+  max-height: min(90vh, 720px);
+}
+
+.utility-modal .modal-content,
+.utility-modal [data-utility-manager] {
+  font-family: "Segoe UI", Tahoma, sans-serif;
+}
+
+.utility-modal .entity-summary {
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.utility-toolbar {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(210px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.utility-toolbar label {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.utility-toolbar input,
+.utility-toolbar select {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.utility-summary {
+  gap: 14px;
+}
+
+.utility-summary article {
+  min-height: 126px;
+  padding: 16px;
+  align-content: center;
+}
+
+.utility-summary span {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.utility-summary strong {
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.utility-summary small {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.utility-table {
+  font-family: inherit;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .modal.utility-modal { width: calc(100vw - 24px); }
+  .utility-toolbar { grid-template-columns: 1fr 1fr; }
+  .utility-toolbar button { min-height: 40px; }
+  .utility-summary { grid-template-columns: 1fr; }
+  .utility-summary article { min-height: 0; }
+}

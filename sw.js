@@ -7,6 +7,7 @@ const APP_SHELL = [
   './enhancements.css',
   './redesign.css',
   './crud.css',
+  './utility-manager.css',
   './building-form.css',
   './building-manager.css',
   './customer-manager.css',

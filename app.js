@@ -985,7 +985,10 @@ function openUtilityManager() {
       } catch (error) { button.disabled = false; showToast(error.message || 'Không thể chốt điện nước'); }
     });
   };
-  openModal('Quản lý điện nước', `<div class="entity-summary">Theo dõi chỉ số và chi phí điện nước của toàn hệ thống, từng tòa nhà và từng căn hộ.</div><div data-utility-manager>${render()}</div>`, bind);
+  openModal('Quản lý điện nước', `<div class="entity-summary">Theo dõi chỉ số và chi phí điện nước của toàn hệ thống, từng tòa nhà và từng căn hộ.</div><div data-utility-manager>${render()}</div>`, () => {
+    document.querySelector('[data-modal]').classList.add('utility-modal');
+    bind();
+  });
 }
 
 function openCommissionForm() {
