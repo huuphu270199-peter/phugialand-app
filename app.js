@@ -115,6 +115,7 @@ async function sendPushNotification(payload) {
 }
 const propertyTypes = {
   apartment: 'Căn hộ',
+  homestay: 'Homestay theo ngày',
   office: 'Văn phòng',
   shophouse: 'Shophouse',
   'whole-building': 'Tòa nhà nguyên căn'
@@ -155,10 +156,19 @@ const catalogConfigs = {
 };
 let deferredInstallPrompt;
 let lastFocusedElement;
+let pwaInstalled = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
   deferredInstallPrompt = event;
+});
+
+window.addEventListener('appinstalled', () => {
+  pwaInstalled = true;
+  deferredInstallPrompt = null;
+  document.querySelector('[data-install-app]')?.replaceChildren(document.createTextNode('Ứng dụng đã được cài đặt'));
+  document.querySelector('[data-install-app]')?.setAttribute('disabled', '');
+  showToast('Đã cài đặt ứng dụng Phú Gia Land');
 });
 
 function showToast(message) {
@@ -190,14 +200,19 @@ function closeModal() {
 }
 
 async function installApp() {
+  if (pwaInstalled) {
+    showToast('Ứng dụng đã được cài đặt trên thiết bị này');
+    return;
+  }
   if (!deferredInstallPrompt) {
-    showToast('Trình duyệt chưa hỗ trợ cài đặt PWA lúc này');
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    openModal('Cài đặt ứng dụng', `<div class="pwa-install-help"><p>${isIos ? 'Trên Safari, mở menu Chia sẻ rồi chọn Thêm vào Màn hình chính.' : 'Dùng menu của trình duyệt và chọn Cài đặt ứng dụng hoặc Thêm vào màn hình chính.'}</p><div class="form-actions"><button type="button" class="primary-button" data-modal-cancel>Đã hiểu</button></div></div>`, () => document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal));
     return;
   }
   deferredInstallPrompt.prompt();
   const choice = await deferredInstallPrompt.userChoice;
   deferredInstallPrompt = null;
-  showToast(choice.outcome === 'accepted' ? 'Đã bắt đầu cài đặt ứng dụng' : 'Đã hủy cài đặt ứng dụng');
+  showToast(choice.outcome === 'accepted' ? 'Đang cài đặt ứng dụng' : 'Đã hủy cài đặt ứng dụng');
 }
 
 function persistBuildings(sync = true) {
@@ -318,7 +333,7 @@ function openBuildingForm(buildingToEdit = null) {
     buildingForm.querySelector('[name="listingType"]')?.closest('label').insertAdjacentHTML('afterend', `<label>Số tầng hoặc danh sách tầng<input name="floors" maxlength="300" value="${escapeHtml(getBuildingFloors(building).join(', '))}" placeholder="Ví dụ: 4 hoặc B1, 1, 2, 3, 4"><small class="form-hint">Nhập 4 để tạo tầng 1 đến tầng 4; nhập danh sách khi có tầng hầm hoặc tầng đặc biệt.</small></label>`);
     paymentDayField?.closest('label').insertAdjacentHTML('afterend', `<label>Tên công ty quản lý<input name="companyName" maxlength="120" value="${escapeHtml(settings.companyName || 'Phú Gia Land')}" placeholder="Ví dụ: Công ty TNHH Phú Gia Land"></label><label>Số điện thoại công ty<input name="companyPhone" maxlength="30" value="${escapeHtml(settings.companyPhone || '')}" placeholder="Ví dụ: 0981 444 413"></label>`);
     if (waterRateField) {
-      waterRateField.closest('label').insertAdjacentHTML('afterend', `<label>Chế độ tiền nước<select name="waterBillingMode"><option value="metered" ${settings.waterBillingMode !== 'fixed' ? 'selected' : ''}>Theo m³</option><option value="fixed" ${settings.waterBillingMode === 'fixed' ? 'selected' : ''}>Mức cố định</option></select></label><label>Mức cố định mặc định (đ/tháng)<input name="waterFixedAmount" type="number" min="0" value="${Number(settings.waterFixedAmount || 0)}"></label><label>Mức nước theo tầng<input name="waterFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.waterFloorRates || {}).map(([floor, amount]) => `${floor}:${amount}`).join(', '))}" placeholder="Ví dụ: 1:150000, 2:180000"></label><label>Giá điện theo tầng (đ/kWh)<input name="electricityFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.electricityFloorRates || {}).map(([floor, amount]) => `${floor}:${amount}`).join(', '))}" placeholder="Ví dụ: 1:3500, 2:4000"></label><label>Smart Home API URL<input name="smartHomeUrl" type="url" value="${escapeHtml(settings.smartHomeUrl || '')}" placeholder="https://smarthome.example/api/meters"></label><label>Smart Home API Key<input name="smartHomeApiKey" type="password" value="${escapeHtml(settings.smartHomeApiKey || '')}" autocomplete="off"></label><label>Smart Home Bearer Token<input name="smartHomeToken" type="password" value="${escapeHtml(settings.smartHomeToken || '')}" autocomplete="off"></label><small class="form-hint">API trả về mảng readings/meters/data; mỗi dòng cần mã công tơ (meterId/deviceId/id/code) và chỉ số (current/reading/value/kwh).</small>`);
+      waterRateField.closest('label').insertAdjacentHTML('afterend', `<label>Chế độ tiền nước<select name="waterBillingMode"><option value="metered" ${settings.waterBillingMode !== 'fixed' ? 'selected' : ''}>Theo m³</option><option value="fixed" ${settings.waterBillingMode === 'fixed' ? 'selected' : ''}>Mức cố định</option></select></label><label>Mức cố định mặc định (đ/tháng)<input name="waterFixedAmount" type="number" min="0" value="${Number(settings.waterFixedAmount || 0)}"></label><label>Mức nước theo tầng<input name="waterFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.waterFloorRates || {}).map(([floor, amount]) => `${floor}:${amount}`).join(', '))}" placeholder="Ví dụ: 1:150000, 2:180000"></label><label>Giá điện theo tầng (đ/kWh)<input name="electricityFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.electricityFloorRates || {}).map(([floor, amount]) => `${floor}:${amount}`).join(', '))}" placeholder="Ví dụ: 1:3500, 2:4000"></label>`);
     }
     setupAdministrativeFields(buildingForm, settings.city || '', settings.ward || '');
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
@@ -350,9 +365,6 @@ function openBuildingForm(buildingToEdit = null) {
       nextBuilding.settings.waterFixedAmount = waterFixedAmount;
       nextBuilding.settings.waterFloorRates = waterFloorRates;
       nextBuilding.settings.electricityFloorRates = electricityFloorRates;
-      nextBuilding.settings.smartHomeUrl = String(form.get('smartHomeUrl') || '').trim();
-      nextBuilding.settings.smartHomeApiKey = String(form.get('smartHomeApiKey') || '').trim();
-      nextBuilding.settings.smartHomeToken = String(form.get('smartHomeToken') || '').trim();
       nextBuilding.settings.companyName = String(form.get('companyName') || '').trim();
       nextBuilding.settings.companyPhone = String(form.get('companyPhone') || '').trim();
       if (editIndex >= 0) buildings[editIndex] = nextBuilding;
@@ -527,6 +539,40 @@ function openApartmentForm(apartmentIndex = -1) {
   });
 }
 
+function formatDateKey(date) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function openHomestayCalendar(apartmentIndex, month = new Date()) {
+  const building = buildings[selectedBuildingIndex];
+  const apartment = building?.apartments?.[apartmentIndex];
+  if (!apartment || apartment.propertyType !== 'homestay') return;
+  const currentMonth = new Date(month.getFullYear(), month.getMonth(), 1);
+  const bookedDates = new Set((Array.isArray(apartment.bookedDates) ? apartment.bookedDates : []).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)));
+  const today = formatDateKey(new Date());
+  const firstDay = currentMonth.getDay();
+  const lastDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+  const dayCells = Array.from({ length: firstDay + lastDate }, (_, index) => {
+    if (index < firstDay) return '<span class="homestay-calendar-blank"></span>';
+    const date = formatDateKey(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), index - firstDay + 1));
+    const isPast = date < today;
+    return `<button type="button" class="homestay-calendar-day ${bookedDates.has(date) ? 'booked' : 'available'}" data-homestay-date="${date}" ${isPast ? 'disabled' : ''}>${index - firstDay + 1}</button>`;
+  }).join('');
+  openModal(`Lịch thuê - ${apartment.title || apartment.name}`, `<div class="homestay-calendar"><p class="entity-summary">Bấm vào ngày để đánh dấu đã thuê hoặc mở lại. Ngày màu xanh đang trống.</p><div class="homestay-calendar-toolbar"><button type="button" data-homestay-month="previous" aria-label="Tháng trước">‹</button><strong>${currentMonth.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })}</strong><button type="button" data-homestay-month="next" aria-label="Tháng sau">›</button></div><div class="homestay-calendar-weekdays"><span>CN</span><span>T2</span><span>T3</span><span>T4</span><span>T5</span><span>T6</span><span>T7</span></div><div class="homestay-calendar-grid">${dayCells}</div><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Đóng</button></div></div>`, () => {
+    document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
+    document.querySelectorAll('[data-homestay-date]').forEach((button) => button.addEventListener('click', () => {
+      const date = button.dataset.homestayDate;
+      if (bookedDates.has(date)) bookedDates.delete(date); else bookedDates.add(date);
+      apartment.bookedDates = [...bookedDates].sort();
+      persistBuildings();
+      openHomestayCalendar(apartmentIndex, currentMonth);
+    }));
+    document.querySelector('[data-homestay-month="previous"]').addEventListener('click', () => openHomestayCalendar(apartmentIndex, new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1)));
+    document.querySelector('[data-homestay-month="next"]').addEventListener('click', () => openHomestayCalendar(apartmentIndex, new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)));
+  });
+}
+
 function openApartmentManager() {
   const building = buildings[selectedBuildingIndex];
   if (!building) {
@@ -535,10 +581,11 @@ function openApartmentManager() {
   }
   const statusLabels = { empty: 'Đang trống', reserved: 'Đang cọc', rented: 'Đang thuê', inactive: 'Ngừng hoạt động' };
   const options = building.apartments.length
-    ? building.apartments.map((apartment, index) => `<article class="modal-option apartment-record">${apartment.image ? `<img src="${escapeHtml(apartment.image)}" alt="${escapeHtml(apartment.title || apartment.name)}">` : ''}<div class="apartment-record-content"><span>${escapeHtml(apartment.title || apartment.name)}</span><small>${propertyTypes[apartment.propertyType || 'apartment']} · ${escapeHtml(apartment.name)} · ${statusLabels[apartment.status] || 'Đang trống'} · ${apartment.beds} giường${apartment.description ? ` · ${escapeHtml(apartment.description)}` : ''}</small></div><div class="catalog-actions"><button type="button" data-apartment-edit="${index}">Sửa</button><button type="button" data-apartment-delete="${index}">Xóa</button></div></article>`).join('')
+    ? building.apartments.map((apartment, index) => `<article class="modal-option apartment-record">${apartment.image ? `<img src="${escapeHtml(apartment.image)}" alt="${escapeHtml(apartment.title || apartment.name)}">` : ''}<div class="apartment-record-content"><span>${escapeHtml(apartment.title || apartment.name)}</span><small>${propertyTypes[apartment.propertyType || 'apartment']} · ${escapeHtml(apartment.name)} · ${statusLabels[apartment.status] || 'Đang trống'} · ${apartment.beds} giường${apartment.description ? ` · ${escapeHtml(apartment.description)}` : ''}</small></div><div class="catalog-actions">${apartment.propertyType === 'homestay' ? `<button type="button" data-apartment-calendar="${index}">Lịch thuê</button>` : ''}<button type="button" data-apartment-edit="${index}">Sửa</button><button type="button" data-apartment-delete="${index}">Xóa</button></div></article>`).join('')
     : '<p class="empty-state">Tòa nhà này chưa có căn hộ hoặc văn phòng.</p>';
   openModal(`Không gian cho thuê - ${building.name}`, `<div class="modal-list">${options}</div><button class="modal-secondary" type="button" data-modal-add-apartment>＋ Thêm căn hộ/văn phòng</button>`, () => {
     document.querySelector('[data-modal-add-apartment]').addEventListener('click', openApartmentForm);
+    document.querySelectorAll('[data-apartment-calendar]').forEach((button) => button.addEventListener('click', () => openHomestayCalendar(Number(button.dataset.apartmentCalendar))));
     document.querySelectorAll('[data-apartment-edit]').forEach((button) => button.addEventListener('click', () => openApartmentForm(Number(button.dataset.apartmentEdit))));
     document.querySelectorAll('[data-apartment-delete]').forEach((button) => button.addEventListener('click', () => {
       const index = Number(button.dataset.apartmentDelete);
@@ -909,14 +956,12 @@ function openMeterForm() {
     document.querySelector('[data-smart-home-sync]').addEventListener('click', async () => {
       const form = document.querySelector('[data-meter-form]');
       const option = form.querySelector('[name="apartment"] option:checked');
-      const building = buildings[Number(option?.dataset.buildingIndex)];
       const meterId = option?.dataset.meterId;
       const status = form.querySelector('[data-smart-home-status]');
-      if (!building?.settings?.smartHomeUrl) { status.textContent = 'Chưa cấu hình Smart Home API cho tòa nhà.'; return; }
       if (!meterId) { status.textContent = 'Phòng chưa có mã công tơ Smart Home.'; return; }
       status.textContent = 'Đang lấy chỉ số...';
       try {
-        const response = await fetch('/api/smart-home/readings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: building.settings.smartHomeUrl, apiKey: building.settings.smartHomeApiKey, token: building.settings.smartHomeToken }) });
+        const response = await fetch('/api/smart-home/readings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Không thể lấy chỉ số');
         const reading = (payload.readings || []).find((item) => item.meterId === meterId);
@@ -1374,33 +1419,31 @@ function openUserManager() {
   });
 }
 
-function exportData() {
-  const data = Object.fromEntries(stateKeys.map((key) => [key, localStorage.getItem(key)]));
-  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data }, null, 2)], { type: 'application/json' });
+async function exportData() {
+  const response = await fetch(`${apiBaseUrl}/backup`);
+  if (!response.ok) throw new Error('Không thể tạo bản sao trên máy chủ');
+  const blob = await response.blob();
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `phu-gia-land-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `phu-gia-land-backup-${new Date().toISOString().slice(0, 10)}.zip`;
   link.click();
   URL.revokeObjectURL(link.href);
-  showToast('Đã xuất bản sao dữ liệu');
+  showToast('Đã tải bản sao đầy đủ từ máy chủ');
 }
 
-function importData(file) {
-  const reader = new FileReader();
-  reader.addEventListener('load', () => {
-    try {
-      const backup = JSON.parse(reader.result);
-      if (!backup?.data || typeof backup.data !== 'object') throw new Error('Invalid backup');
-      Object.entries(backup.data).forEach(([key, value]) => {
-        if (stateKeys.includes(key) && value !== null) localStorage.setItem(key, value);
-      });
-      showToast('Đã nhập dữ liệu, trang sẽ tải lại');
-      window.setTimeout(() => window.location.reload(), 600);
-    } catch (error) {
-      showToast('File backup không hợp lệ');
-    }
-  });
-  reader.readAsText(file);
+async function importData(file) {
+  if (!file || !/\.zip$/i.test(file.name)) { showToast('Chỉ hỗ trợ file backup .zip'); return; }
+  if (!window.confirm('Khôi phục sẽ thay thế toàn bộ dữ liệu, ảnh, video và tài liệu hiện có trên máy chủ. Tiếp tục?')) return;
+  try {
+    const response = await fetch(`${apiBaseUrl}/restore`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archiveDataUrl: await fileToDataUrl(file) }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Không thể khôi phục bản sao');
+    localStorage.clear();
+    showToast('Đã khôi phục dữ liệu trên máy chủ, trang sẽ tải lại');
+    window.setTimeout(() => window.location.reload(), 600);
+  } catch (error) {
+    showToast(error.message || 'File backup không hợp lệ');
+  }
 }
 
 function collectLocalState() {
@@ -1481,6 +1524,9 @@ function openAdminPasswordForm(required = false) {
         if (!response.ok) throw new Error(payload.error || 'Không thể đổi mật khẩu');
         passwordChangeRequired = false;
         closeModal();
+        const url = new URL(window.location.href);
+        url.searchParams.delete('change-password');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
         showToast('Đã đổi mật khẩu quản trị viên');
       } catch (error) {
         button.disabled = false;
@@ -1491,17 +1537,24 @@ function openAdminPasswordForm(required = false) {
 }
 
 function openProfile() {
-  openModal('Tài khoản', '<div class="profile-summary"><span class="avatar large">NHP</span><div><strong>Nguyễn Hữu Phú</strong><small>Chủ nhà</small></div></div><div class="profile-actions"><button type="button" data-smart-home-settings>Thiết lập API Smart Home</button><button type="button" data-profile-action>Thông tin cá nhân</button><button type="button" data-change-admin-password>Đổi mật khẩu</button><button type="button" data-install-app>Cài đặt ứng dụng</button><button type="button" data-sync-server>Đồng bộ lên máy chủ</button><button type="button" data-pull-server>Tải dữ liệu máy chủ</button><button type="button" data-export-data>Xuất bản sao dữ liệu</button><label class="profile-file">Nhập bản sao dữ liệu<input type="file" accept="application/json" data-import-data></label><button type="button" data-reset-data>Xóa toàn bộ dữ liệu</button><button type="button" data-logout>Đăng xuất</button></div>', () => {
+  const profile = readStorage('nvp-manager-profile', { name: 'Nguyễn Hữu Phú', title: 'Chủ nhà' });
+  const initials = profile.name.split(/\s+/).map((part) => part[0]).slice(-3).join('').toUpperCase();
+  openModal('Tài khoản', `<div class="profile-summary"><span class="avatar large">${escapeHtml(initials)}</span><div><strong>${escapeHtml(profile.name)}</strong><small>${escapeHtml(profile.title)}</small></div></div><div class="profile-actions profile-actions-grouped"><section><p>Vận hành</p><button type="button" data-smart-home-settings>Thiết lập API Smart Home</button><button type="button" data-profile-action>Thông tin cá nhân</button><button type="button" data-install-app ${pwaInstalled ? 'disabled' : ''}>${pwaInstalled ? 'Ứng dụng đã được cài đặt' : 'Cài đặt ứng dụng'}</button></section><section><p>Bảo mật</p><button type="button" data-change-admin-password>Đổi mật khẩu</button></section><details class="profile-recovery"><summary>Sao lưu và khôi phục</summary><button type="button" data-export-data>Xuất bản sao dữ liệu</button><label class="profile-file">Nhập bản sao dữ liệu<input type="file" accept="application/json" data-import-data></label><button type="button" data-reset-data>Xóa toàn bộ dữ liệu</button></details><button type="button" class="profile-logout" data-logout>Đăng xuất</button></div>`, () => {
     document.querySelector('[data-smart-home-settings]').addEventListener('click', openSmartHomeSettings);
-    document.querySelectorAll('[data-profile-action]').forEach((button) => button.addEventListener('click', () => {
-      closeModal();
-      showToast(`${button.textContent} đang được mở`);
+    document.querySelector('[data-profile-action]').addEventListener('click', () => openModal('Thông tin cá nhân', `<form class="building-form" data-manager-profile-form><label>Họ và tên<input name="name" required maxlength="80" value="${escapeHtml(profile.name)}"></label><label>Vai trò<input name="title" required maxlength="50" value="${escapeHtml(profile.title)}"></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu thông tin</button></div></form>`, () => {
+      document.querySelector('[data-modal-cancel]').addEventListener('click', openProfile);
+      document.querySelector('[data-manager-profile-form]').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        localStorage.setItem('nvp-manager-profile', JSON.stringify({ name: String(form.get('name')).trim(), title: String(form.get('title')).trim() }));
+        openProfile();
+        showToast('Đã cập nhật thông tin cá nhân');
+      });
     }));
     document.querySelector('[data-change-admin-password]').addEventListener('click', () => openAdminPasswordForm());
     document.querySelector('[data-install-app]').addEventListener('click', installApp);
-    document.querySelector('[data-sync-server]').addEventListener('click', syncToServer);
-    document.querySelector('[data-pull-server]').addEventListener('click', pullFromServer);
-    document.querySelector('[data-export-data]').addEventListener('click', exportData);
+    document.querySelector('[data-export-data]').addEventListener('click', () => exportData().catch((error) => showToast(error.message || 'Không thể tạo bản sao')));
+    document.querySelector('[data-import-data]').setAttribute('accept', '.zip,application/zip');
     document.querySelector('[data-import-data]').addEventListener('change', (event) => event.target.files[0] && importData(event.target.files[0]));
     document.querySelector('[data-reset-data]').addEventListener('click', async () => {
       if (!window.confirm('Xóa vĩnh viễn toàn bộ dữ liệu, tài liệu, cấu hình và đăng xuất?')) return;
@@ -1534,8 +1587,15 @@ async function openSmartHomeSettings() {
     const config = await response.json();
     if (!response.ok) throw new Error(config.error || 'Không thể tải cấu hình Smart Home');
     openModal('Thiết lập Tuya Cloud', `<form class="building-form" data-smart-home-config-form><p class="entity-summary">Kết nối dự án Tuya Singapore để nhận chỉ số điện của công tơ.</p><label>Tuya Access ID<input name="tuyaAccessId" required value="${escapeHtml(config.tuyaAccessId)}" autocomplete="off"></label><label>Tuya Access Secret<input name="tuyaAccessSecret" type="password" autocomplete="new-password" placeholder="${config.tuyaSecretSet ? 'Đã lưu, để trống để giữ nguyên' : 'Nhập Access Secret'}"></label><label>Tuya OpenAPI endpoint<input name="tuyaEndpoint" type="url" required value="${escapeHtml(config.tuyaEndpoint)}"></label><label>Tuya Message Queue endpoint<input name="tuyaMqEndpoint" type="url" required value="${escapeHtml(config.tuyaMqEndpoint)}"></label><label>Tuya Device IDs công tơ<textarea name="tuyaDeviceIds" rows="3" placeholder="Mỗi Device ID một dòng hoặc ngăn cách bằng dấu phẩy">${escapeHtml(config.tuyaDeviceIds)}</textarea><small class="form-hint">Sao chép Device ID từ tab Devices của Tuya. Chỉ các ID này mới hiện trong mục Chọn công tơ.</small></label><label>MQ topic<input name="tuyaTopic" value="${escapeHtml(config.tuyaTopic)}" placeholder="Lấy từ Tuya Message Service"></label><label>MQ token<input name="tuyaMqToken" type="password" autocomplete="new-password" placeholder="${config.tuyaMqTokenSet ? 'Đã lưu, để trống để giữ nguyên' : 'Lấy từ Tuya Message Service'}"></label><label>Tên subscription<input name="tuyaSubscription" required value="${escapeHtml(config.tuyaSubscription)}"></label><label>Endpoint nhận dữ liệu<input value="${escapeHtml(`${window.location.origin}${config.endpoint}`)}" readonly></label><label>Token nhận dữ liệu<input name="pushToken" type="password" minlength="16" autocomplete="new-password" placeholder="${config.tokenSet ? 'Đã lưu, để trống để giữ nguyên' : 'Tối thiểu 16 ký tự'}"></label><div class="form-actions"><button type="button" class="modal-secondary" data-generate-smart-token>Tạo token</button><button type="button" class="modal-secondary" data-modal-cancel>Hủy</button><button type="submit" class="primary-button">Lưu cấu hình</button></div></form>`, () => {
+      const configForm = document.querySelector('[data-smart-home-config-form]');
+      configForm.querySelectorAll('label').forEach((label) => {
+        const field = label.querySelector('input, textarea, select');
+        if (!['tuyaAccessId', 'tuyaAccessSecret'].includes(field?.name)) label.remove();
+      });
+      configForm.querySelector('[data-generate-smart-token]')?.remove();
+      configForm.querySelector('.entity-summary').textContent = 'Chỉ cần Access ID và Access Secret. Hệ thống sẽ tự dò các thiết bị thuộc Tuya Cloud Project này.';
+      configForm.querySelector('[type="submit"]').textContent = 'Lưu và dò thiết bị';
       document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
-      document.querySelector('[data-generate-smart-token]').addEventListener('click', () => { document.querySelector('[data-smart-home-config-form] [name="pushToken"]').value = `${crypto.randomUUID()}${crypto.randomUUID().replaceAll('-', '')}`; });
       document.querySelector('[data-smart-home-config-form]').addEventListener('submit', async (event) => {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
@@ -1699,7 +1759,13 @@ if (buildings.length) {
 }
 updateDashboard();
 hydrateFromServer();
-if (new URLSearchParams(window.location.search).get('change-password') === 'required') openAdminPasswordForm(true);
+if (new URLSearchParams(window.location.search).get('change-password') === 'required') {
+  fetch(`${apiBaseUrl}/session`).then(async (response) => {
+    const session = await response.json();
+    if (response.ok && session.passwordChangeRequired) openAdminPasswordForm(true);
+    else window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
+  }).catch(() => {});
+}
 
 buildingSelect?.addEventListener('click', renderBuildingPicker);
 document.querySelector('.asset-stats a[href="#buildings"]')?.addEventListener('click', (event) => {
@@ -1743,5 +1809,5 @@ document.addEventListener('keydown', (event) => {
 });
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=59').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=61').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
 }

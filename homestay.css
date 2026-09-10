@@ -1,0 +1,33 @@
+.homestay-calendar { display: grid; gap: 14px; }
+.homestay-calendar-toolbar { display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; gap: 8px; }
+.homestay-calendar-toolbar strong { text-align: center; text-transform: capitalize; }
+.homestay-calendar-toolbar button { width: 38px; height: 36px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font-size: 24px; cursor: pointer; }
+.homestay-calendar-weekdays, .homestay-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.homestay-calendar-weekdays span { color: var(--muted); font-size: 11px; font-weight: 700; text-align: center; }
+.homestay-calendar-day, .homestay-calendar-blank { min-height: 38px; border-radius: 6px; }
+.homestay-calendar-day { border: 1px solid var(--line); background: #e8f5ec; color: #176b38; font: 700 13px Manrope, sans-serif; cursor: pointer; }
+.homestay-calendar-day.booked { background: #f8e8e7; border-color: #e4aaa6; color: #9d332b; }
+.homestay-calendar-day:disabled { background: #f1f2f1; border-color: #e4e6e5; color: #a1a8a4; cursor: not-allowed; }
+.smart-home-advanced, .smart-home-api { border: 1px solid var(--line); border-radius: 6px; background: #f8faf8; }
+.smart-home-advanced > summary, .smart-home-api > summary { padding: 11px 12px; color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
+.smart-home-advanced[open] > summary, .smart-home-api[open] > summary { border-bottom: 1px solid var(--line); color: var(--ink); }
+.smart-home-advanced > label, .smart-home-advanced > .form-hint, .smart-home-api > label, .smart-home-api > .form-hint { margin: 12px; }
+.smart-home-api { margin: 12px; border-color: #dbe5df; }
+.smart-home-api > label { margin-bottom: 0; }
+.smart-home-api > .form-hint { display: block; margin-top: 8px; }
+.profile-actions-grouped { display: grid; gap: 14px; margin-top: 18px; }
+.profile-actions-grouped section, .profile-recovery { display: grid; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.profile-actions-grouped section > p, .profile-recovery > summary { margin: 0; padding: 10px 13px; border-bottom: 1px solid var(--line); background: #f6f9f7; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.profile-recovery > summary { cursor: pointer; list-style: none; }
+.profile-recovery > summary::-webkit-details-marker { display: none; }
+.profile-actions-grouped button, .profile-file { min-height: 46px; width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 0 13px; text-align: left; font: 700 13px Manrope, sans-serif; cursor: pointer; }
+.profile-actions-grouped section button:last-child, .profile-recovery [data-reset-data] { border-bottom: 0; }
+.profile-actions-grouped button:hover, .profile-file:hover { background: #effaf4; color: var(--brand-dark); }
+.profile-file { display: flex; align-items: center; }
+.profile-file input { display: none; }
+.profile-recovery:not([open]) > :not(summary) { display: none; }
+.profile-actions-grouped .profile-logout { border: 1px solid #efc9c7; border-radius: 7px; color: #b52d27; }
+.profile-actions-grouped .profile-logout:hover, .profile-actions-grouped [data-reset-data]:hover { background: #fff1f0; color: #a1221d; }
+.profile-actions-grouped button:disabled { background: #f2f5f3; color: var(--muted); cursor: default; }
+.pwa-install-help p { margin: 0; color: var(--muted); line-height: 1.6; }
+@media (max-width: 520px) { .profile-actions-grouped { gap: 12px; } .profile-actions-grouped button, .profile-file { min-height: 48px; } }

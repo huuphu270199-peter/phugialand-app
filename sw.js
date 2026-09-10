@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phu-gia-land-v59';
+const CACHE_NAME = 'phu-gia-land-v61';
 const APP_SHELL = [
   './',
   './index.html',
@@ -11,11 +11,14 @@ const APP_SHELL = [
   './vietnamese-typography.css',
   './building-form.css',
   './building-manager.css',
+  './homestay.css',
   './customer-manager.css',
   './customer-detail.css',
   './vp-theme.css',
   './app.js',
   './manifest.webmanifest',
+  './assets/pwa-icon-192.png',
+  './assets/pwa-icon-512.png',
   './assets/Logo BPG.jpg'
 ];
 

@@ -1,7 +1,10 @@
 const http = require('node:http');
+const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { ZipArchive } = require('archiver');
+const unzipper = require('unzipper');
 const webpush = require('web-push');
 const mysql = require('mysql2/promise');
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
@@ -19,7 +22,7 @@ const vapidPublicKey = process.env.NVP_VAPID_PUBLIC_KEY || '';
 const vapidPrivateKey = process.env.NVP_VAPID_PRIVATE_KEY || '';
 const vapidSubject = process.env.NVP_VAPID_SUBJECT || 'mailto:info.nhavanphuc@gmail.com';
 if (vapidPublicKey && vapidPrivateKey) webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
-const maxBodyBytes = 30_000_000;
+const maxBodyBytes = 100_000_000;
 const root = __dirname;
 const dataDirectory = path.join(root, 'data');
 const dataFile = path.join(dataDirectory, 'state.json');
@@ -79,9 +82,9 @@ const mimeTypes = {
   '.pdf': 'application/pdf',
   '.ico': 'image/x-icon'
 };
-const appFiles = new Set(['index.html', 'styles.css', 'modal.css', 'enhancements.css', 'redesign.css', 'crud.css', 'utility-manager.css', 'building-form.css', 'building-manager.css', 'customer-manager.css', 'customer-detail.css', 'vp-theme.css', 'vietnamese-typography.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
+const appFiles = new Set(['index.html', 'styles.css', 'modal.css', 'enhancements.css', 'redesign.css', 'crud.css', 'utility-manager.css', 'building-form.css', 'building-manager.css', 'homestay.css', 'customer-manager.css', 'customer-detail.css', 'vp-theme.css', 'vietnamese-typography.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'assets/icon.svg', 'assets/Logo BPG.jpg', 'assets/pwa-icon-192.png', 'assets/pwa-icon-512.png']);
 const websiteFiles = new Set(['public.html', 'public.css', 'vp-theme.css', 'vietnamese-typography.css', 'public.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
-const loginFiles = new Set(['login.html', 'login.css', 'vp-theme.css', 'vietnamese-typography.css', 'login.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
+const loginFiles = new Set(['login.html', 'login.css', 'vp-theme.css', 'vietnamese-typography.css', 'login.js', 'manifest.webmanifest', 'sw.js', 'assets/icon.svg', 'assets/Logo BPG.jpg', 'assets/pwa-icon-192.png', 'assets/pwa-icon-512.png']);
 const tenantFiles = new Set(['tenant.html', 'tenant.css', 'vietnamese-typography.css', 'tenant.js', 'assets/icon.svg', 'assets/Logo BPG.jpg']);
 
 function getRequestHost(request) {
@@ -187,7 +190,8 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
-function getAvailableApartments(state) {
+function getAvailableApartments(state, requestedDate = '') {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : new Date().toISOString().slice(0, 10);
   let buildings = state.state?.['nvp-buildings'];
   try {
     buildings = typeof buildings === 'string' ? JSON.parse(buildings) : buildings;
@@ -199,7 +203,7 @@ function getAvailableApartments(state) {
     const apartments = Array.isArray(building.apartments) ? building.apartments : [];
     const spaces = apartments.length ? apartments : building.listingType === 'whole-building' && building.active !== false ? [{ name: building.name, title: building.name, propertyType: 'whole-building', status: 'empty', media: building.media, image: building.image }] : [];
     return spaces
-    .filter((apartment) => apartment.status === 'empty')
+    .filter((apartment) => apartment.status === 'empty' && !(apartment.propertyType === 'homestay' && Array.isArray(apartment.bookedDates) && apartment.bookedDates.includes(date)))
     .map((apartment) => ({
       building: String(building.name || 'Phú Gia Land'),
       address: String(building.address || ''),
@@ -209,7 +213,8 @@ function getAvailableApartments(state) {
       description: String(apartment.description || ''),
       image: typeof apartment.image === 'string' && (apartment.image.startsWith('data:image/') || apartment.image.startsWith('/api/media/')) ? apartment.image : String(apartment.media?.find((item) => item.kind === 'image')?.url || ''),
       media: Array.isArray(apartment.media) ? apartment.media.filter((item) => item?.url && (item.kind === 'image' || item.kind === 'video')).map((item) => ({ kind: item.kind, url: item.url, mimeType: item.mimeType })) : [],
-      beds: Number(apartment.beds || 0)
+      beds: Number(apartment.beds || 0),
+      bookedDates: Array.isArray(apartment.bookedDates) ? apartment.bookedDates.filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)).sort() : []
     }));
   });
 }
@@ -331,6 +336,49 @@ async function updateEnvironmentVariable(name, value) {
   await fs.writeFile(environmentFile, updated, 'utf8');
 }
 
+async function restoreBackupArchive(dataUrl) {
+  const matched = /^data:(?:application\/zip|application\/x-zip-compressed|application\/octet-stream);base64,(.+)$/s.exec(String(dataUrl || ''));
+  if (!matched) throw new Error('Backup must be a ZIP file');
+  const archive = Buffer.from(matched[1], 'base64');
+  if (!archive.length || archive.length > 75_000_000) throw new Error('Backup archive is empty or too large');
+  const entries = await unzipper.Open.buffer(archive);
+  const backupEntry = entries.files.find((entry) => entry.path === 'backup.json');
+  if (!backupEntry) throw new Error('Backup file does not contain backup.json');
+  let backup;
+  try {
+    backup = JSON.parse((await backupEntry.buffer()).toString('utf8'));
+  } catch {
+    throw new Error('Backup state is invalid');
+  }
+  if (!backup?.state || typeof backup.state !== 'object') throw new Error('Backup state is invalid');
+  const state = Object.fromEntries(Object.entries(backup.state).filter(([key, value]) => allowedKeys.has(key) && (typeof value === 'string' || value === null)));
+  const restoreDirectory = path.join(dataDirectory, `.restore-${crypto.randomUUID()}`);
+  const restoreMediaDirectory = path.join(restoreDirectory, 'media');
+  const restoreDocumentDirectory = path.join(restoreDirectory, 'documents');
+  await fs.mkdir(restoreDirectory, { recursive: true });
+  try {
+    for (const entry of entries.files) {
+      const entryPath = entry.path.replaceAll('\\', '/');
+      if (entry.type === 'Directory' || entryPath === 'backup.json') continue;
+      if (!/^(media|documents)\/[a-zA-Z0-9._-]+$/.test(entryPath)) throw new Error('Backup contains an invalid file path');
+      const destination = path.resolve(restoreDirectory, entryPath);
+      if (!destination.startsWith(`${restoreDirectory}${path.sep}`)) throw new Error('Backup contains an invalid file path');
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      await fs.writeFile(destination, await entry.buffer());
+    }
+    const oldMediaDirectory = path.join(dataDirectory, `.previous-media-${crypto.randomUUID()}`);
+    const oldDocumentDirectory = path.join(dataDirectory, `.previous-documents-${crypto.randomUUID()}`);
+    await fs.rename(mediaDirectory, oldMediaDirectory).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+    await fs.rename(documentDirectory, oldDocumentDirectory).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+    await fs.rename(restoreMediaDirectory, mediaDirectory).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+    await fs.rename(restoreDocumentDirectory, documentDirectory).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+    await writeState({ version: 1, updatedAt: new Date().toISOString(), state });
+    await Promise.all([fs.rm(oldMediaDirectory, { recursive: true, force: true }), fs.rm(oldDocumentDirectory, { recursive: true, force: true })]);
+  } finally {
+    await fs.rm(restoreDirectory, { recursive: true, force: true });
+  }
+}
+
 function normalizeSmartHomeReadings(payload) {
   const candidates = Array.isArray(payload) ? payload : payload?.readings || payload?.meters || payload?.data || payload?.devices || [];
   if (!Array.isArray(candidates)) return [];
@@ -391,7 +439,6 @@ async function fetchSmartHomeReadings(config) {
 async function fetchTuyaMeters(config) {
   if (!config?.tuyaAccessId || !config?.tuyaAccessSecret) throw new Error('Tuya Cloud is not configured');
   const deviceIds = String(config.tuyaDeviceIds || '').split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
-  if (!deviceIds.length) throw new Error('Add at least one Tuya Device ID in Smart Home settings');
   const tuya = new TuyaContext({
     baseUrl: String(config.tuyaEndpoint || tuyaSingaporeEndpoint).replace(/openapi\.tuyaas\.com|openapi\.tuyas\.com|openapi\.tuyaus\.com/, 'openapi-sg.iotbing.com'),
     accessKey: config.tuyaAccessId,
@@ -399,11 +446,11 @@ async function fetchTuyaMeters(config) {
   });
   const response = await tuya.request({
     method: 'GET',
-    path: `/v1.0/iot-03/devices?device_ids=${encodeURIComponent(deviceIds.join(','))}`,
+    path: deviceIds.length ? `/v1.0/iot-03/devices?device_ids=${encodeURIComponent(deviceIds.join(','))}` : '/v1.0/iot-03/devices?page_no=1&page_size=100',
     body: {}
   });
-  if (!response?.success) throw new Error(response?.msg || 'Tuya device query failed');
-  const devices = response.result?.list || [];
+  if (!response?.success) throw new Error(response?.msg || 'Tuya device discovery failed. Link the Tuya Smart/Smart Life account to this Cloud Project, then try again.');
+  const devices = response.result?.list || response.result?.data || (Array.isArray(response.result) ? response.result : []);
   return devices.map((device) => ({
     meterId: String(device.id || device.device_id || device.dev_id || '').trim(),
     name: String(device.name || device.product_name || device.productName || '').trim()
@@ -412,8 +459,9 @@ async function fetchTuyaMeters(config) {
 
 async function fetchTuyaEnergyReadings(config) {
   if (!config?.tuyaAccessId || !config?.tuyaAccessSecret) throw new Error('Tuya Cloud is not configured');
-  const deviceIds = String(config.tuyaDeviceIds || '').split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
-  if (!deviceIds.length) throw new Error('Add at least one Tuya Device ID in Smart Home settings');
+  const configuredDeviceIds = String(config.tuyaDeviceIds || '').split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+  const deviceIds = configuredDeviceIds.length ? configuredDeviceIds : (await fetchTuyaMeters(config)).map((device) => device.meterId);
+  if (!deviceIds.length) throw new Error('No Tuya devices were found. Link the Tuya Smart/Smart Life account to this Cloud Project.');
   const tuya = new TuyaContext({
     baseUrl: String(config.tuyaEndpoint || tuyaSingaporeEndpoint).replace(/openapi\.tuyaas\.com|openapi\.tuyas\.com|openapi\.tuyaus\.com/, 'openapi-sg.iotbing.com'),
     accessKey: config.tuyaAccessId,
@@ -553,9 +601,11 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, { ok: true, sent: results.filter((result) => result.status === 'fulfilled').length });
       return;
     }
-    if (request.method === 'GET' && request.url === '/api/availability') {
+    if (request.method === 'GET' && request.url.startsWith('/api/availability')) {
       const state = await readState();
-      sendJson(response, 200, { updatedAt: state.updatedAt, apartments: getAvailableApartments(state) });
+      const availabilityUrl = new URL(request.url, 'http://localhost');
+      const date = availabilityUrl.searchParams.get('date') || '';
+      sendJson(response, 200, { updatedAt: state.updatedAt, date, apartments: getAvailableApartments(state, date) });
       return;
     }
     if (request.method === 'POST' && request.url === '/api/utilities/close') {
@@ -568,9 +618,9 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'POST' && request.url === '/api/smart-home/readings') {
       if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
-      const payload = await readBody(request);
       try {
-        sendJson(response, 200, { readings: await fetchSmartHomeReadings(payload) });
+        const config = parseStateValue(await readState(), 'nvp-smart-home-config', {});
+        sendJson(response, 200, { readings: await fetchSmartHomeReadings({ url: config.smartHomeUrl, apiKey: config.smartHomeApiKey, token: config.smartHomeToken }) });
       } catch (error) {
         sendJson(response, 502, { error: error.message || 'Smart Home API unavailable' });
       }
@@ -602,6 +652,9 @@ const server = http.createServer(async (request, response) => {
         endpoint: '/api/smart-home/push-readings',
         configured: Boolean(config.pushToken || smartHomePushToken),
         tokenSet: Boolean(config.pushToken || smartHomePushToken),
+        smartHomeUrl: config.smartHomeUrl || '',
+        smartHomeApiKeySet: Boolean(config.smartHomeApiKey),
+        smartHomeTokenSet: Boolean(config.smartHomeToken),
         tuyaAccessId: config.tuyaAccessId || '',
         tuyaEndpoint: String(config.tuyaEndpoint || tuyaSingaporeEndpoint).replace(/openapi\.tuyaas\.com|openapi\.tuyas\.com|openapi\.tuyaus\.com/, 'openapi-sg.iotbing.com'),
         tuyaMqEndpoint: String(config.tuyaMqEndpoint || tuyaSingaporeMqEndpoint).replace(/mqe\.tuyaas\.com|mqe\.tuyas\.com/, 'mqe.tuyaus.com'),
@@ -626,6 +679,9 @@ const server = http.createServer(async (request, response) => {
       const config = {
         ...existing,
         pushToken: pushToken || existing.pushToken || '',
+        smartHomeUrl: String(payload.smartHomeUrl || existing.smartHomeUrl || '').trim(),
+        smartHomeApiKey: String(payload.smartHomeApiKey || existing.smartHomeApiKey || '').trim(),
+        smartHomeToken: String(payload.smartHomeToken || existing.smartHomeToken || '').trim(),
         tuyaAccessId: String(payload.tuyaAccessId || existing.tuyaAccessId || '').trim(),
         tuyaAccessSecret: String(payload.tuyaAccessSecret || existing.tuyaAccessSecret || '').trim(),
         tuyaEndpoint: String(payload.tuyaEndpoint || existing.tuyaEndpoint || tuyaSingaporeEndpoint).trim().replace(/openapi\.tuyaas\.com|openapi\.tuyas\.com|openapi\.tuyaus\.com/, 'openapi-sg.iotbing.com'),
@@ -942,6 +998,27 @@ const server = http.createServer(async (request, response) => {
       current.state['nvp-feedback'] = JSON.stringify(feedback);
       await writeState(current);
       sendJson(response, 201, { feedback: item });
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/api/backup') {
+      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      const state = await readState();
+      const fileName = `phu-gia-land-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+      const archive = new ZipArchive({ zlib: { level: 9 } });
+      archive.on('error', (error) => response.destroy(error));
+      response.writeHead(200, { ...securityHeaders(), 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${fileName}"`, 'Cache-Control': 'no-store' });
+      archive.pipe(response);
+      archive.append(JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), state: state.state }, null, 2), { name: 'backup.json' });
+      if (fsSync.existsSync(mediaDirectory)) archive.directory(mediaDirectory, 'media');
+      if (fsSync.existsSync(documentDirectory)) archive.directory(documentDirectory, 'documents');
+      await archive.finalize();
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/api/restore') {
+      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      const payload = await readBody(request);
+      await restoreBackupArchive(payload.archiveDataUrl);
+      sendJson(response, 200, { ok: true });
       return;
     }
     if (request.method === 'GET' && request.url === '/api/state') {
