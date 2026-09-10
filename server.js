@@ -508,7 +508,7 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (request.method === 'GET' && request.url === '/api/health') {
-      sendJson(response, 200, { ok: true, service: 'phu-gia-land-api' });
+      sendJson(response, 200, { ok: true, service: 'phu-gia-land-api', host: getRequestHost(request), forwardedHost: String(request.headers['x-forwarded-host'] || '') });
       return;
     }
     if (request.method === 'GET' && request.url === '/api/session') {
