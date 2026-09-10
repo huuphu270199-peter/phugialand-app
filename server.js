@@ -71,7 +71,7 @@ const tenantFiles = new Set(['tenant.html', 'tenant.css', 'tenant.js', 'assets/i
 
 function isApplicationHost(request) {
   const host = (request.headers.host || '').split(':')[0].toLowerCase();
-  return host === 'app.phugialand.vn' || host === 'app.localhost' || host === 'localhost' || host === '127.0.0.1';
+  return host === 'phugialand.vn' || host === 'www.phugialand.vn' || host === 'app.phugialand.vn' || host === 'app.localhost' || host === 'localhost' || host === '127.0.0.1';
 }
 
 function isTenantHost(request) {
