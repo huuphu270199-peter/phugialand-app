@@ -1,0 +1,46 @@
+.customer-name-link {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: 800 13px Manrope, sans-serif;
+  padding: 0;
+  text-align: left;
+}
+
+.faq { display: none !important; }
+
+.customer-name-link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+.customer-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 16px 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.customer-detail-grid > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: var(--card);
+}
+
+.customer-detail-grid .full { grid-column: 1 / -1; }
+.customer-detail-grid small { color: var(--muted); font: 600 11px Manrope, sans-serif; }
+.customer-detail-grid strong { overflow-wrap: anywhere; font: 700 13px Manrope, sans-serif; }
+.customer-detail-section { margin-top: 18px; }
+.customer-detail-section h3 { margin: 0 0 8px; font-size: 13px; }
+.customer-detail-section ul { margin: 0; padding-left: 20px; color: var(--muted); font: 500 12px/1.7 Manrope, sans-serif; }
+
+@media (max-width: 520px) {
+  .customer-detail-grid { grid-template-columns: 1fr; }
+  .customer-detail-grid .full { grid-column: auto; }
+}

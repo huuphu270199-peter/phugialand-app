@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0649a6">
+  <link rel="icon" href="assets/Logo%20BPG.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="login.css">
+  <link rel="stylesheet" href="vp-theme.css">
+  <title>Đăng nhập | Phú Gia Land</title>
+</head>
+<body>
+  <main class="login-layout">
+    <section class="brand-panel">
+      <a class="brand" href="https://phugialand.vn"><img src="assets/Logo%20BPG.jpg" alt="Phú Gia Land"><span>PHÚ GIA LAND</span></a>
+      <div><p class="eyebrow">HỆ THỐNG VẬN HÀNH</p><h1>Quản lý bất động sản, gọn gàng và chủ động.</h1></div>
+      <p class="brand-note">Khu vực dành cho đội ngũ Phú Gia Land.</p>
+    </section>
+    <section class="form-panel" aria-labelledby="login-title">
+      <form data-login-form method="post" autocomplete="on">
+        <p class="eyebrow">CHÀO MỪNG TRỞ LẠI</p>
+        <h2 id="login-title">Đăng nhập</h2>
+        <label>Email<input name="email" type="email" autocomplete="username" required></label>
+        <label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label>
+        <p class="form-error" data-login-error role="alert" hidden></p>
+        <button type="submit">Vào hệ thống</button>
+      </form>
+    </section>
+  </main>
+  <script src="login.js"></script>
+</body>
+</html>

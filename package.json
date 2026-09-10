@@ -1,0 +1,17 @@
+{
+  "name": "phu-gia-land",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Phu Gia Land property management PWA",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "tuya:energy": "node tuya-energy-listener.js"
+  },
+  "dependencies": {
+    "@tuya/tuya-connector-nodejs": "^2.1.2",
+    "dotenv": "^17.4.2",
+    "pulsar-client": "^1.18.0",
+    "web-push": "^3.6.7"
+  }
+}

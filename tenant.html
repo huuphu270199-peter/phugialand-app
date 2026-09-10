@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0649a6">
+  <link rel="icon" href="assets/Logo%20BPG.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="tenant.css">
+  <title>Cư dân | Phú Gia Land</title>
+</head>
+<body>
+  <main class="tenant-shell">
+    <header><a class="brand" href="/"><img src="assets/Logo%20BPG.jpg" alt="Phú Gia Land"><span>PHÚ GIA LAND</span></a><span>CỔNG CƯ DÂN</span></header>
+    <section class="tenant-login" data-tenant-login>
+      <p class="eyebrow">CỔNG CƯ DÂN</p><h1>Thông báo và hóa đơn của bạn.</h1>
+      <form data-tenant-login-form method="post" autocomplete="on"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label><p data-login-error role="alert" hidden></p><button type="submit">Đăng nhập</button></form>
+    </section>
+    <section class="tenant-dashboard" data-tenant-dashboard hidden>
+      <div class="welcome"><div><p class="eyebrow">CỔNG CƯ DÂN</p><h1>Xin chào, <span data-tenant-name></span></h1></div><div><button type="button" data-enable-push>Nhận thông báo trên điện thoại</button><button type="button" data-tenant-refresh>↻</button><button type="button" data-tenant-logout>Đăng xuất</button></div></div>
+      <div class="tenant-grid"><section><h2>Hóa đơn</h2><div data-tenant-invoices></div></section><section><h2>Thông báo</h2><div data-tenant-notifications></div></section></div>
+      <section class="feedback-section"><div class="feedback-heading"><div><p class="eyebrow">HỖ TRỢ CƯ DÂN</p><h2>Đóng góp ý kiến &amp; yêu cầu sửa chữa</h2></div><p>Gửi phản ánh kèm ảnh để Phú Gia Land tiếp nhận và xử lý nhanh hơn.</p></div><form data-feedback-form><div class="feedback-form-grid"><label>Loại yêu cầu<select name="category"><option value="repair">Yêu cầu sửa chữa</option><option value="suggestion">Đóng góp ý kiến</option><option value="complaint">Phản ánh dịch vụ</option><option value="other">Khác</option></select></label><label>Mức độ<select name="priority"><option value="normal">Bình thường</option><option value="high">Ưu tiên</option><option value="urgent">Khẩn cấp</option></select></label></div><label>Tiêu đề<input name="title" required maxlength="120" placeholder="Ví dụ: Điều hòa phòng khách không hoạt động"></label><label>Nội dung chi tiết<textarea name="message" required maxlength="1500" rows="5" placeholder="Mô tả tình trạng, thời gian xảy ra và thông tin cần hỗ trợ..."></textarea></label><label>Ảnh hiện trạng<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><small>Tối đa 700 KB.</small></label><p data-feedback-error role="alert" hidden></p><button type="submit">Gửi yêu cầu</button></form><div class="feedback-history"><h3>Yêu cầu đã gửi</h3><div data-tenant-feedback></div></div></section>
+    </section>
+  </main>
+  <script src="tenant.js?v=5"></script>
+</body>
+</html>

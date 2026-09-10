@@ -1,0 +1,53 @@
+:root { --brand: #0649a6; --brand-dark: #04357e; --sidebar: #08295a; --line: #d7e1f0; --muted: #63718a; --paper: #f6f9fe; --card: #ffffff; --ink: #122a4c; --red: #c64646; --yellow: #e0a12f; --purple: #4b69b7; }
+.app-shell { background: linear-gradient(135deg, #edf4ff 0%, #f9fbff 52%, #e6f0ff 100%); }
+.sidebar { background: var(--sidebar); box-shadow: 12px 0 28px #08295a1a; }
+.brand-mark { color: #ffffff; }
+.brand-mark img { width: 46px; height: 34px; object-fit: contain; filter: none; }
+.mobile-brand img { width: 38px; height: 28px; object-fit: contain; }
+.nav-link:hover, .nav-link.active, .nav-link.open { background: #ffffff18; border-color: #91b8ef70; }
+.nav-link.active { box-shadow: inset 3px 0 #7cb0ff; }
+.nav-link.active .nav-icon, .nav-link:hover .nav-icon { color: #b9d5ff; }
+.sidebar-collapse, .primary-button { background: var(--brand); }
+.sidebar-collapse { border-color: #8dbaff; }
+.topbar { background: #fbfdffdd; }
+.page-heading strong, .profile strong { color: var(--brand); }
+.round-button { background: #f4f8ff; border-color: #ccddf5; color: var(--brand); }
+.notification-button b { background: var(--brand); }
+.theme-toggle { background: #e4efff; }
+.theme-toggle span:first-child { color: var(--brand); }
+.primary-button:hover { background: var(--brand-dark); }
+.building-select { border-color: #c8d9f0; color: #526b91; }
+@media (max-width: 760px) { .brand-mark img { width: 40px; height: 30px; }.mobile-brand img { width: 34px; height: 25px; } }
+
+body:has(.login-layout) { background: #f6f9fe; }
+.login-layout { color: #122a4c; }
+.brand-panel { background: #0649a6; }
+.brand-panel .brand img { width: 48px; height: 34px; object-fit: contain; }
+.brand-note { color: #dfeaff; }
+.form-panel .eyebrow { color: #0649a6; }
+.form-panel input:focus { outline-color: #8dbaff; border-color: #0649a6; }
+.form-panel button { background: #0649a6; }
+
+body:has(.site-header) { background: #f6f9fe; }
+.site-header .brand img { width: 46px; height: 34px; object-fit: contain; }
+
+html.dark { --brand: #71a7ff; --brand-dark: #9bc2ff; --sidebar: #061a3a; --line: #294266; --muted: #a7bad6; --paper: #0b1730; --card: #10213e; --ink: #edf4ff; --red: #ff8e92; --yellow: #ffd071; --purple: #afc4ff; color-scheme: dark; }
+html.dark body, html.dark .app-shell { background: #0b1730; color: var(--ink); }
+html.dark .app-shell { background: linear-gradient(135deg, #0b1730 0%, #10213e 54%, #0d1b36 100%); }
+html.dark .sidebar { background: #061a3a; box-shadow: 12px 0 28px #0000002b; }
+html.dark .topbar { background: #10213ee8; border-color: var(--line); }
+html.dark .page-heading span, html.dark .profile small, html.dark .building-select, html.dark .footer { color: var(--muted); }
+html.dark .round-button, html.dark .building-select, html.dark .theme-toggle { background: #142947; border-color: var(--line); color: var(--ink); }
+html.dark .theme-toggle span:first-child { color: var(--muted); }
+html.dark .theme-toggle span:last-child { color: #ffd071; }
+html.dark .stat-card, html.dark .panel, html.dark .incident-grid article, html.dark .form-section, html.dark .modal, html.dark .customer-tabs button, html.dark .manager-stat { background: var(--card); border-color: var(--line); color: var(--ink); box-shadow: none; }
+html.dark .stat-card.patterned { background-image: linear-gradient(135deg, #10213e, #132947), linear-gradient(#294266 1px, transparent 1px), linear-gradient(90deg, #294266 1px, transparent 1px); }
+html.dark .panel-heading, html.dark .panel-foot, html.dark .form-section-title, html.dark .modal-header, html.dark .manager-footer, html.dark .building-table th, html.dark .building-table td, html.dark .customer-tabs button { border-color: var(--line); }
+html.dark .form-section-title { background: #142947; }
+html.dark input, html.dark select, html.dark textarea, html.dark .manager-toolbar input, html.dark .manager-toolbar select, html.dark .manager-footer select { background: #0b1730; color: var(--ink); border-color: var(--line); }
+html.dark input::placeholder, html.dark textarea::placeholder { color: #8aa0c2; }
+html.dark .modal-secondary, html.dark .catalog-actions button { background: #142947; border-color: var(--line); color: var(--ink); }
+html.dark .modal-option { background: #10213e; border-color: var(--line); color: var(--ink); }
+html.dark .modal-option small, html.dark .entity-summary, html.dark .form-hint, html.dark .table-muted { color: var(--muted); }
+html.dark .building-table tr:hover td, html.dark .manager-toolbar, html.dark .customer-toolbar { background: #142947; }
+html.dark .footer { border-color: var(--line); }
