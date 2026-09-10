@@ -36,7 +36,7 @@ let administrativeUnitsPromise;
 function readStorage(key, fallback) {
   try {
     const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
+    return value ? JSON.parse(value) ?? fallback : fallback;
   } catch (error) {
     console.warn(`Không thể đọc dữ liệu ${key}:`, error);
     return fallback;
@@ -968,7 +968,7 @@ function openUtilityManager() {
       return { ...item, electricity, water, electricityAmount, waterAmount, total: electricityAmount + waterAmount };
     });
     const total = rows.reduce((summary, item) => ({ electricity: summary.electricity + item.electricity, water: summary.water + item.water, electricityAmount: summary.electricityAmount + item.electricityAmount, waterAmount: summary.waterAmount + item.waterAmount, amount: summary.amount + item.total }), { electricity: 0, water: 0, electricityAmount: 0, waterAmount: 0, amount: 0 });
-    return `<div class="utility-toolbar"><label>Tháng<input type="month" data-utility-month value="${month}"></label><label>Tòa nhà<select data-utility-building><option value="">Toàn hệ thống</option>${buildings.map((building) => `<option value="${escapeHtml(building.name)}" ${building.name === buildingName ? 'selected' : ''}>${escapeHtml(building.name)}</option>`).join('')}</select></label><button class="modal-secondary" type="button" data-utility-close>Chốt & tạo hóa đơn</button><button class="primary-button" type="button" data-utility-add>＋ Ghi chỉ số</button></div><section class="utility-summary"><article><span>Tổng điện hệ thống</span><strong>${total.electricity.toLocaleString('vi-VN')} kWh</strong><small>${total.electricityAmount.toLocaleString('vi-VN')} đ</small></article><article><span>Tổng nước hệ thống</span><strong>${total.water.toLocaleString('vi-VN')} m³</strong><small>${total.waterAmount.toLocaleString('vi-VN')} đ</small></article><article><span>Tổng tiền điện nước</span><strong>${total.amount.toLocaleString('vi-VN')} đ</strong><small>${rows.length} căn hộ trong phạm vi</small></article></section><div class="utility-table-wrap"><table class="utility-table"><thead><tr><th>Tòa nhà</th><th>Căn hộ</th><th>Điện</th><th>Tiền điện</th><th>Nước</th><th>Tiền nước</th><th>Tổng căn</th></tr></thead><tbody>${rows.length ? rows.map((item) => `<tr><td>${escapeHtml(item.building)}</td><td><strong>${escapeHtml(item.apartment)}</strong></td><td>${item.electricity.toLocaleString('vi-VN')} kWh</td><td>${item.electricityAmount.toLocaleString('vi-VN')} đ</td><td>${item.water.toLocaleString('vi-VN')} m³</td><td>${item.waterAmount.toLocaleString('vi-VN')} đ</td><td><strong>${item.total.toLocaleString('vi-VN')} đ</strong></td></tr>`).join('') : '<tr><td colspan="7" class="utility-empty">Chưa có căn hộ trong phạm vi lựa chọn.</td></tr>'}</tbody></table></div>`;
+    return `<div class="utility-toolbar"><label>Tháng<input type="month" data-utility-month value="${month}"></label><label>Tòa nhà<select data-utility-building><option value="">Toàn hệ thống</option>${buildings.map((building) => `<option value="${escapeHtml(building.name)}" ${building.name === buildingName ? 'selected' : ''}>${escapeHtml(building.name)}</option>`).join('')}</select></label><button class="modal-secondary" type="button" data-utility-sync>↻ Đồng bộ Tuya</button><button class="modal-secondary" type="button" data-utility-close>Chốt & tạo hóa đơn</button><button class="primary-button" type="button" data-utility-add>＋ Ghi chỉ số</button></div><section class="utility-summary"><article><span>Tổng điện hệ thống</span><strong>${total.electricity.toLocaleString('vi-VN')} kWh</strong><small>${total.electricityAmount.toLocaleString('vi-VN')} đ</small></article><article><span>Tổng nước hệ thống</span><strong>${total.water.toLocaleString('vi-VN')} m³</strong><small>${total.waterAmount.toLocaleString('vi-VN')} đ</small></article><article><span>Tổng tiền điện nước</span><strong>${total.amount.toLocaleString('vi-VN')} đ</strong><small>${rows.length} căn hộ trong phạm vi</small></article></section><div class="utility-table-wrap"><table class="utility-table"><thead><tr><th>Tòa nhà</th><th>Căn hộ</th><th>Điện</th><th>Tiền điện</th><th>Nước</th><th>Tiền nước</th><th>Tổng căn</th></tr></thead><tbody>${rows.length ? rows.map((item) => `<tr><td>${escapeHtml(item.building)}</td><td><strong>${escapeHtml(item.apartment)}</strong></td><td>${item.electricity.toLocaleString('vi-VN')} kWh</td><td>${item.electricityAmount.toLocaleString('vi-VN')} đ</td><td>${item.water.toLocaleString('vi-VN')} m³</td><td>${item.waterAmount.toLocaleString('vi-VN')} đ</td><td><strong>${item.total.toLocaleString('vi-VN')} đ</strong></td></tr>`).join('') : '<tr><td colspan="7" class="utility-empty">Chưa có căn hộ trong phạm vi lựa chọn.</td></tr>'}</tbody></table></div>`;
   };
   const bind = () => {
     const container = document.querySelector('[data-utility-manager]');
@@ -976,6 +976,26 @@ function openUtilityManager() {
     container.querySelector('[data-utility-month]').addEventListener('change', refresh);
     container.querySelector('[data-utility-building]').addEventListener('change', refresh);
     container.querySelector('[data-utility-add]').addEventListener('click', openMeterForm);
+    container.querySelector('[data-utility-sync]').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/smart-home/sync-energy', { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Không thể đồng bộ chỉ số Tuya');
+        const stateResponse = await fetch(`${apiBaseUrl}/state`);
+        const statePayload = await stateResponse.json();
+        if (!stateResponse.ok) throw new Error(statePayload.error || 'Không thể tải chỉ số mới');
+        const remoteMeterLogs = statePayload.state?.[meterLogStorageKey];
+        const nextMeterLogs = typeof remoteMeterLogs === 'string' ? JSON.parse(remoteMeterLogs) : remoteMeterLogs;
+        meterLogs.splice(0, meterLogs.length, ...(Array.isArray(nextMeterLogs) ? nextMeterLogs : []));
+        localStorage.setItem(meterLogStorageKey, JSON.stringify(meterLogs));
+        refresh();
+      } catch (error) {
+        button.disabled = false;
+        showToast(error.message);
+      }
+    });
     container.querySelector('[data-utility-close]').addEventListener('click', async () => {
       const button = container.querySelector('[data-utility-close]');
       button.disabled = true;
@@ -1460,11 +1480,33 @@ async function hydrateFromServer() {
 }
 
 function openProfile() {
-  openModal('Tài khoản', '<div class="profile-summary"><span class="avatar large">NHP</span><div><strong>Nguyễn Hữu Phú</strong><small>Chủ nhà</small></div></div><div class="profile-actions"><button type="button" data-smart-home-settings>Thiết lập API Smart Home</button><button type="button" data-profile-action>Thông tin cá nhân</button><button type="button" data-install-app>Cài đặt ứng dụng</button><button type="button" data-sync-server>Đồng bộ lên máy chủ</button><button type="button" data-pull-server>Tải dữ liệu máy chủ</button><button type="button" data-export-data>Xuất bản sao dữ liệu</button><label class="profile-file">Nhập bản sao dữ liệu<input type="file" accept="application/json" data-import-data></label><button type="button" data-reset-data>Xóa toàn bộ dữ liệu</button><button type="button" data-logout>Đăng xuất</button></div>', () => {
+  openModal('Tài khoản', '<div class="profile-summary"><span class="avatar large">NHP</span><div><strong>Nguyễn Hữu Phú</strong><small>Chủ nhà</small></div></div><div class="profile-actions"><button type="button" data-smart-home-settings>Thiết lập API Smart Home</button><button type="button" data-profile-action>Thông tin cá nhân</button><button type="button" data-change-admin-password>Đổi mật khẩu</button><button type="button" data-install-app>Cài đặt ứng dụng</button><button type="button" data-sync-server>Đồng bộ lên máy chủ</button><button type="button" data-pull-server>Tải dữ liệu máy chủ</button><button type="button" data-export-data>Xuất bản sao dữ liệu</button><label class="profile-file">Nhập bản sao dữ liệu<input type="file" accept="application/json" data-import-data></label><button type="button" data-reset-data>Xóa toàn bộ dữ liệu</button><button type="button" data-logout>Đăng xuất</button></div>', () => {
     document.querySelector('[data-smart-home-settings]').addEventListener('click', openSmartHomeSettings);
     document.querySelectorAll('[data-profile-action]').forEach((button) => button.addEventListener('click', () => {
       closeModal();
       showToast(`${button.textContent} đang được mở`);
+    }));
+    document.querySelector('[data-change-admin-password]').addEventListener('click', () => openModal('Đổi mật khẩu quản trị viên', '<form class="building-form" data-admin-password-form><label>Mật khẩu hiện tại<input name="currentPassword" type="password" required autocomplete="current-password"></label><label>Mật khẩu mới<input name="newPassword" type="password" required minlength="12" autocomplete="new-password"></label><label>Xác nhận mật khẩu mới<input name="confirmPassword" type="password" required minlength="12" autocomplete="new-password"></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Cập nhật mật khẩu</button></div></form>', () => {
+      document.querySelector('[data-modal-cancel]').addEventListener('click', openProfile);
+      document.querySelector('[data-admin-password-form]').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const currentPassword = String(form.get('currentPassword') || '');
+        const newPassword = String(form.get('newPassword') || '');
+        if (newPassword !== String(form.get('confirmPassword') || '')) { showToast('Xác nhận mật khẩu mới không khớp'); return; }
+        const submitButton = event.currentTarget.querySelector('[type="submit"]');
+        submitButton.disabled = true;
+        try {
+          const response = await fetch('/api/admin-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword }) });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Không thể đổi mật khẩu');
+          showToast('Đã đổi mật khẩu quản trị viên');
+          openProfile();
+        } catch (error) {
+          submitButton.disabled = false;
+          showToast(error.message);
+        }
+      });
     }));
     document.querySelector('[data-install-app]').addEventListener('click', installApp);
     document.querySelector('[data-sync-server]').addEventListener('click', syncToServer);
@@ -1685,8 +1727,8 @@ document.querySelector('[data-add-building]')?.addEventListener('click', openBui
 document.querySelector('[data-notifications]')?.addEventListener('click', openNotifications);
 document.querySelector('[data-profile]')?.addEventListener('click', openProfile);
 document.querySelectorAll('[data-toast]').forEach((button) => button.addEventListener('click', () => showToast(button.dataset.toast)));
-document.querySelector('[data-modal-close]')?.addEventListener('click', closeModal);
 modalBackdrop?.addEventListener('click', (event) => {
+  if (event.target.closest('[data-modal-close]')) { closeModal(); return; }
   if (event.target === modalBackdrop) closeModal();
 });
 document.addEventListener('keydown', (event) => {

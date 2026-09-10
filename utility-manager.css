@@ -72,3 +72,16 @@
   .utility-summary { grid-template-columns: 1fr; }
   .utility-summary article { min-height: 0; }
 }
+
+button {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}

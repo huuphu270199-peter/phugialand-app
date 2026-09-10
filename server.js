@@ -5,11 +5,13 @@ const crypto = require('node:crypto');
 const webpush = require('web-push');
 const { TuyaContext } = require('@tuya/tuya-connector-nodejs');
 
+require('dotenv').config();
+
 const port = Number(process.env.PORT || 4176);
 const apiToken = process.env.NVP_API_TOKEN || '';
 const smartHomePushToken = process.env.NVP_SMART_HOME_PUSH_TOKEN || apiToken;
-const adminEmail = process.env.NVP_ADMIN_EMAIL || '';
-const adminPassword = process.env.NVP_ADMIN_PASSWORD || '';
+let adminEmail = process.env.NVP_ADMIN_EMAIL || '';
+let adminPassword = process.env.NVP_ADMIN_PASSWORD || '';
 const sessionSecret = process.env.NVP_SESSION_SECRET || apiToken;
 const bankWebhookSecret = process.env.NVP_BANK_WEBHOOK_SECRET || '';
 const vapidPublicKey = process.env.NVP_VAPID_PUBLIC_KEY || '';
@@ -271,6 +273,20 @@ function verifyPassword(password, storedHash) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
+async function updateEnvironmentVariable(name, value) {
+  const environmentFile = path.join(root, '.env');
+  const assignment = `${name}=${JSON.stringify(value)}`;
+  let contents = '';
+  try {
+    contents = await fs.readFile(environmentFile, 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  const expression = new RegExp(`^${name}=.*$`, 'm');
+  const updated = expression.test(contents) ? contents.replace(expression, assignment) : `${contents}${contents && !contents.endsWith('\n') ? '\n' : ''}${assignment}\n`;
+  await fs.writeFile(environmentFile, updated, 'utf8');
+}
+
 function normalizeSmartHomeReadings(payload) {
   const candidates = Array.isArray(payload) ? payload : payload?.readings || payload?.meters || payload?.data || payload?.devices || [];
   if (!Array.isArray(candidates)) return [];
@@ -348,6 +364,56 @@ async function fetchTuyaMeters(config) {
     meterId: String(device.id || device.device_id || device.dev_id || '').trim(),
     name: String(device.name || device.product_name || device.productName || '').trim()
   })).filter((device) => device.meterId);
+}
+
+async function fetchTuyaEnergyReadings(config) {
+  if (!config?.tuyaAccessId || !config?.tuyaAccessSecret) throw new Error('Tuya Cloud is not configured');
+  const deviceIds = String(config.tuyaDeviceIds || '').split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+  if (!deviceIds.length) throw new Error('Add at least one Tuya Device ID in Smart Home settings');
+  const tuya = new TuyaContext({
+    baseUrl: String(config.tuyaEndpoint || tuyaSingaporeEndpoint).replace(/openapi\.tuyaas\.com|openapi\.tuyas\.com|openapi\.tuyaus\.com/, 'openapi-sg.iotbing.com'),
+    accessKey: config.tuyaAccessId,
+    secretKey: config.tuyaAccessSecret
+  });
+  const readings = await Promise.all(deviceIds.map(async (meterId) => {
+    const response = await tuya.request({ method: 'GET', path: `/v1.0/iot-03/devices/${encodeURIComponent(meterId)}/status`, body: {} });
+    if (!response?.success) throw new Error(response?.msg || `Tuya status query failed for ${meterId}`);
+    const energy = (response.result || []).find((item) => item.code === 'total_forward_energy' || item.code === 'add_ele');
+    if (!energy || !Number.isFinite(Number(energy.value))) return null;
+    const scale = Number.isInteger(Number(energy.scale)) ? Number(energy.scale) : 2;
+    return { meterId, current: Number(energy.value) / (10 ** scale), timestamp: new Date().toISOString() };
+  }));
+  return readings.filter(Boolean);
+}
+
+async function syncTuyaEnergyReadings() {
+  const state = await readState();
+  const config = parseStateValue(state, 'nvp-smart-home-config', {});
+  const readings = await fetchTuyaEnergyReadings(config);
+  const buildings = parseStateValue(state, 'nvp-buildings', []);
+  const meterLogs = parseStateValue(state, 'nvp-meter-logs', []);
+  const month = new Date().toISOString().slice(0, 7);
+  const synced = [];
+  const skipped = [];
+  readings.forEach((reading) => {
+    const building = buildings.find((item) => (item.apartments || []).some((apartment) => String(apartment.meterId || '').trim() === reading.meterId));
+    const apartment = building?.apartments?.find((item) => String(item.meterId || '').trim() === reading.meterId);
+    if (!building || !apartment) { skipped.push({ meterId: reading.meterId, reason: 'Meter is not mapped to an apartment' }); return; }
+    const apartmentKey = `${building.name} | ${apartment.name}`;
+    const existing = meterLogs.find((log) => log.service === 'electricity' && log.meterId === reading.meterId && log.month === month);
+    const previousLog = meterLogs.filter((log) => log.service === 'electricity' && log.meterId === reading.meterId && log !== existing).at(-1);
+    const previous = Number(existing?.previous ?? previousLog?.current ?? 0);
+    if (reading.current < previous) { skipped.push({ meterId: reading.meterId, reason: 'Current reading is lower than previous reading' }); return; }
+    const rate = Number(apartment.electricityRate || (building.settings?.electricityFloorRates || {})[apartment.floor] || building.settings?.electricityRate || 0);
+    const log = { id: existing?.id || crypto.randomUUID(), apartment: apartmentKey, meterId: reading.meterId, service: 'electricity', previous, current: reading.current, usage: reading.current - previous, rate, amount: (reading.current - previous) * rate, month, source: 'tuya-cloud', createdAt: existing?.createdAt || reading.timestamp, updatedAt: reading.timestamp };
+    if (existing) Object.assign(existing, log);
+    else meterLogs.push(log);
+    synced.push({ meterId: reading.meterId, apartment: apartment.name, current: reading.current, usage: log.usage });
+  });
+  state.updatedAt = new Date().toISOString();
+  state.state['nvp-meter-logs'] = JSON.stringify(meterLogs);
+  await writeState(state);
+  return { month, synced, skipped };
 }
 
 function getDocumentType(dataUrl) {
@@ -464,6 +530,15 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 200, { meters: await fetchTuyaMeters(config) });
       } catch (error) {
         sendJson(response, 502, { error: error.message || 'Unable to retrieve Tuya devices' });
+      }
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/api/smart-home/sync-energy') {
+      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      try {
+        sendJson(response, 200, { ok: true, ...(await syncTuyaEnergyReadings()) });
+      } catch (error) {
+        sendJson(response, 502, { error: error.message || 'Unable to sync Tuya energy readings' });
       }
       return;
     }
@@ -717,6 +792,24 @@ const server = http.createServer(async (request, response) => {
       const secure = request.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
       response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ...securityHeaders(), 'Set-Cookie': `nvp_session=${encodeURIComponent(signSession(adminEmail, 'manager'))}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800${secure}` });
       response.end(JSON.stringify({ ok: true, role: 'manager' }));
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/api/admin-password') {
+      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      const payload = await readBody(request);
+      const currentPassword = String(payload.currentPassword || '');
+      const newPassword = String(payload.newPassword || '');
+      if (!hasMatchingSecret(currentPassword, adminPassword)) { sendJson(response, 400, { error: 'Current password is incorrect' }); return; }
+      if (newPassword.length < 12 || /[\r\n]/.test(newPassword)) { sendJson(response, 400, { error: 'New password must contain at least 12 characters' }); return; }
+      try {
+        await updateEnvironmentVariable('NVP_ADMIN_PASSWORD', newPassword);
+        adminPassword = newPassword;
+        process.env.NVP_ADMIN_PASSWORD = newPassword;
+        sendJson(response, 200, { ok: true });
+      } catch (error) {
+        console.error('Unable to update administrator password:', error);
+        sendJson(response, 500, { error: 'Unable to update password' });
+      }
       return;
     }
     if (request.method === 'POST' && request.url === '/api/logout') {
