@@ -1,10 +1,10 @@
-const CACHE_NAME = 'phu-gia-land-v63';
+const CACHE_NAME = 'phu-gia-land-v64';
 const isTenantPortal = self.location.hostname.startsWith('tenant.') || self.location.hostname.startsWith('tentant.');
 const APP_SHELL = isTenantPortal ? [
   './',
   './tenant.html',
   './tenant.css',
-  './vietnamese-typography.css',
+  './vietnamese-typography.css?v=64',
   './tenant.js',
   './tenant.webmanifest',
   './assets/pwa-icon-192.png',
@@ -19,7 +19,7 @@ const APP_SHELL = isTenantPortal ? [
   './redesign.css',
   './crud.css',
   './utility-manager.css',
-  './vietnamese-typography.css',
+  './vietnamese-typography.css?v=64',
   './building-form.css',
   './building-manager.css',
   './homestay.css',

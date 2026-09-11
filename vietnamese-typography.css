@@ -68,6 +68,13 @@ body {
 .apartment-building-picker-intro > div {
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+
+.apartment-building-picker-intro span,
+.apartment-building-picker-intro strong,
+.apartment-building-picker-intro small {
+  display: block;
 }
 
 .apartment-building-picker-intro span {
