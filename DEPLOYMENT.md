@@ -6,9 +6,7 @@ Tài liệu này dùng đúng ba hostname:
 | --- | --- |
 | `phugialand.vn` | Trang chủ và thông tin công khai |
 | `app.phugialand.vn` | Ứng dụng quản lý |
-| `tentant.phugialand.vn` | Cổng người thuê |
-
-> `tentant` được giữ đúng theo tên miền yêu cầu. Nếu tên đúng phải là `tenant.phugialand.vn`, hãy đổi cả DNS và `NVP_TENANT_HOSTS` trước khi triển khai.
+| `tenant.phugialand.vn` | Cổng người thuê |
 
 ## 1. Phần đưa lên GitHub
 
@@ -41,7 +39,7 @@ Trong DNS Zone Editor, tạo bản ghi cho cả ba hostname trỏ về IP hostin
 ```text
 @        A       <IP_HOSTING>
 app      A       <IP_HOSTING>
-tentant  A       <IP_HOSTING>
+tenant   A       <IP_HOSTING>
 ```
 
 Nếu nhà cung cấp yêu cầu CNAME cho subdomain, dùng giá trị họ cung cấp thay bản ghi A. Sau khi DNS hoạt động, bật AutoSSL cho cả ba hostname và xác nhận cả ba URL mở bằng HTTPS.
@@ -56,7 +54,7 @@ Clone/deploy GitHub một lần vào thư mục như:
 /home/CPANEL_USER/phugialand-app
 ```
 
-Tạo một Node.js Application dùng Node 22, startup file `server.js`. Yêu cầu hosting ánh xạ cả `phugialand.vn`, `app.phugialand.vn` và `tentant.phugialand.vn` vào cùng ứng dụng Passenger/Node này. Server tự chọn giao diện theo hostname.
+Tạo một Node.js Application dùng Node 22, startup file `server.js`. Yêu cầu hosting ánh xạ cả `phugialand.vn`, `app.phugialand.vn` và `tenant.phugialand.vn` vào cùng ứng dụng Passenger/Node này. Server tự chọn giao diện theo hostname.
 
 Phương án này chỉ có một bản source và một thư mục media, tránh lệch dữ liệu giữa ba tiến trình.
 
@@ -103,7 +101,7 @@ NVP_ADMIN_PASSWORD=<MAT_KHAU_RIENG_TOI_THIEU_12_KY_TU>
 NVP_ADMIN_PASSWORD_CHANGE_REQUIRED=true
 NVP_SESSION_SECRET=<CHUOI_NGAU_NHIEN_TOI_THIEU_32_KY_TU>
 NVP_APP_HOSTS=app.phugialand.vn
-NVP_TENANT_HOSTS=tentant.phugialand.vn
+NVP_TENANT_HOSTS=tenant.phugialand.vn
 NVP_DATA_DIRECTORY=/home/CPANEL_USER/phugialand-data
 
 DB_HOST=localhost
@@ -184,7 +182,7 @@ Script tự tạo bảng nếu cần và thay toàn bộ state MySQL bằng nộ
 
 1. `https://phugialand.vn`: chỉ hiển thị trang công khai.
 2. `https://app.phugialand.vn`: hiện trang đăng nhập quản lý, đăng nhập được.
-3. `https://tentant.phugialand.vn`: hiện cổng người thuê, không hiện dashboard quản lý.
+3. `https://tenant.phugialand.vn`: hiện cổng người thuê, không hiện dashboard quản lý.
 4. Kiểm tra số tòa nhà, căn hộ, khách thuê, hóa đơn, tài khoản và phản ánh.
 5. Mở thử từng ảnh, video và tài liệu.
 6. Đăng nhập một tài khoản người thuê và kiểm tra hóa đơn/thông báo.

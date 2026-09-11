@@ -123,7 +123,7 @@ function configuredHosts(name, defaults) {
 }
 
 const applicationHosts = configuredHosts('NVP_APP_HOSTS', 'app.phugialand.vn,app.localhost,localhost,127.0.0.1');
-const tenantHosts = configuredHosts('NVP_TENANT_HOSTS', 'tentant.phugialand.vn,tentant.localhost');
+const tenantHosts = configuredHosts('NVP_TENANT_HOSTS', 'tenant.phugialand.vn,tenant.localhost');
 
 function isApplicationHost(request) {
   return applicationHosts.has(getRequestHost(request));
