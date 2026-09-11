@@ -1,5 +1,6 @@
 ---
 deployment:
   tasks:
-    - export PATH=$HOME/nodevenv/phugialand-app/22/bin:$PATH && npm ci --omit=optional
-    - mkdir -p tmp && touch tmp/restart.txt
+    - /home/c7v64szlhjqa/nodevenv/phugialand-app/22/bin/npm ci --omit=optional --prefix /home/c7v64szlhjqa/phugialand-app
+    - /usr/bin/mkdir -p /home/c7v64szlhjqa/phugialand-app/tmp
+    - /usr/bin/touch /home/c7v64szlhjqa/phugialand-app/tmp/restart.txt
