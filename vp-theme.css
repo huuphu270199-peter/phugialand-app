@@ -1,4 +1,6 @@
 :root { --brand: #0649a6; --brand-dark: #04357e; --sidebar: #08295a; --line: #d7e1f0; --muted: #63718a; --paper: #f6f9fe; --card: #ffffff; --ink: #122a4c; --red: #c64646; --yellow: #e0a12f; --purple: #4b69b7; }
+.bed-inventory-hidden { display: none !important; }
+.asset-stats.without-bed-inventory .stat-card:last-child { grid-column: 1 / -1; }
 .app-shell { background: linear-gradient(135deg, #edf4ff 0%, #f9fbff 52%, #e6f0ff 100%); }
 .sidebar { background: var(--sidebar); box-shadow: 12px 0 28px #08295a1a; }
 .brand-mark { color: #ffffff; }
@@ -7,6 +9,11 @@
 .nav-link:hover, .nav-link.active, .nav-link.open { background: #ffffff18; border-color: #91b8ef70; }
 .nav-link.active { box-shadow: inset 3px 0 #7cb0ff; }
 .nav-link.active .nav-icon, .nav-link:hover .nav-icon { color: #b9d5ff; }
+.nav-trigger .chevron, .building-select .select-chevron { display: inline-grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: 50%; transition: transform .2s ease, background-color .2s ease, border-color .2s ease; }
+.nav-trigger .chevron { margin-left: auto; border: 1px solid #9bb6dc42; background: #ffffff0a; }
+.nav-trigger .chevron::before, .building-select .select-chevron::before { content: ''; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); }
+.nav-trigger:hover .chevron, .nav-trigger.open .chevron { color: #d8e7ff; background: #ffffff14; border-color: #9bb6dc70; }
+.nav-trigger.open .chevron { transform: rotate(180deg); }
 .sidebar-collapse, .primary-button { background: var(--brand); }
 .sidebar-collapse { border-color: #8dbaff; }
 .topbar { background: #fbfdffdd; }
@@ -16,7 +23,9 @@
 .theme-toggle { background: #e4efff; }
 .theme-toggle span:first-child { color: var(--brand); }
 .primary-button:hover { background: var(--brand-dark); }
-.building-select { border-color: #c8d9f0; color: #526b91; }
+.building-select { border-color: #c8d9f0; color: #526b91; display: inline-flex; align-items: center; gap: 10px; }
+.building-select .select-chevron { width: 22px; height: 22px; margin-left: 4px; color: var(--brand); background: #e8f1ff; border: 1px solid #c8daf5; }
+.building-select:hover .select-chevron { background: #dceaff; border-color: #a9c5eb; transform: translateY(1px); }
 @media (max-width: 760px) { .brand-mark img { width: 40px; height: 30px; }.mobile-brand img { width: 34px; height: 25px; } }
 
 body:has(.login-layout) { background: #f6f9fe; }
@@ -51,3 +60,30 @@ html.dark .modal-option { background: #10213e; border-color: var(--line); color:
 html.dark .modal-option small, html.dark .entity-summary, html.dark .form-hint, html.dark .table-muted { color: var(--muted); }
 html.dark .building-table tr:hover td, html.dark .manager-toolbar, html.dark .customer-toolbar { background: #142947; }
 html.dark .footer { border-color: var(--line); }
+
+:where(a, button, input, select, textarea, summary):focus-visible {
+	outline: 3px solid #7cb0ff;
+	outline-offset: 2px;
+}
+.panel-heading a { display: inline-flex; align-items: center; min-height: 36px; padding-inline: 6px; }
+.topbar button, .content-toolbar button { min-height: 40px; }
+body.role-staff .grid-wide { grid-template-columns: minmax(0, 1fr); }
+
+@media (max-width: 760px) {
+	.sidebar { width: min(280px, 86vw); }
+	.nav-link { min-height: 42px; }
+	.submenu a { display: flex; align-items: center; min-height: 40px; }
+	.modal { width: min(94vw, 720px); max-height: calc(100dvh - 24px); }
+	.modal-content { overflow-x: hidden; }
+	.form-actions { position: sticky; bottom: 0; z-index: 2; padding-block: 10px; background: var(--card); }
+}
+
+@media (max-width: 600px) {
+	.form-grid, .grid-three, .grid-wide, .lower-grid { grid-template-columns: minmax(0, 1fr) !important; }
+	.asset-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.status-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.topbar-actions { gap: 6px; }
+	.profile-button div { display: none; }
+	.form-actions { display: grid; grid-template-columns: 1fr; }
+	.form-actions button, .form-actions .profile-file { width: 100%; min-height: 44px; }
+}

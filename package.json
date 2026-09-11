@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Phu Gia Land property management PWA",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "backup:data": "node create-data-backup.js",
     "migrate:mysql": "node migrate-file-state-to-mysql.js",
     "tuya:energy": "node tuya-energy-listener.js"
   },

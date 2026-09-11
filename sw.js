@@ -1,5 +1,16 @@
-const CACHE_NAME = 'phu-gia-land-v61';
-const APP_SHELL = [
+const CACHE_NAME = 'phu-gia-land-v63';
+const isTenantPortal = self.location.hostname.startsWith('tenant.') || self.location.hostname.startsWith('tentant.');
+const APP_SHELL = isTenantPortal ? [
+  './',
+  './tenant.html',
+  './tenant.css',
+  './vietnamese-typography.css',
+  './tenant.js',
+  './tenant.webmanifest',
+  './assets/pwa-icon-192.png',
+  './assets/pwa-icon-512.png',
+  './assets/Logo BPG.jpg'
+] : [
   './',
   './index.html',
   './styles.css',
@@ -47,7 +58,7 @@ self.addEventListener('fetch', (event) => {
       const copy = response.clone();
       caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
       return response;
-    }).catch(() => caches.match(event.request).then((cached) => cached || caches.match('./index.html'))));
+    }).catch(() => caches.match(event.request).then((cached) => cached || caches.match(isTenantPortal ? './tenant.html' : './index.html'))));
     return;
   }
   event.respondWith(
@@ -57,7 +68,7 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
       }
       return response;
-    }).catch(() => caches.match('./index.html')))
+    }).catch(() => caches.match(isTenantPortal ? './tenant.html' : './index.html')))
   );
 });
 

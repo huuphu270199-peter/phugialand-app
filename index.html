@@ -22,7 +22,7 @@
   <link rel="stylesheet" href="vp-theme.css">
   <link rel="stylesheet" href="vietnamese-typography.css">
 </head>
-<body class="bg-paper text-ink antialiased dark:bg-slate-950 dark:text-slate-100">
+<body class="role-pending bg-paper text-ink antialiased dark:bg-slate-950 dark:text-slate-100">
   <div class="app-shell min-h-screen">
     <div class="sidebar-overlay" data-sidebar-overlay></div>
     <aside class="sidebar" data-sidebar aria-label="Thanh điều hướng chính">
@@ -35,37 +35,33 @@
       <nav class="sidebar-scroll" aria-label="Menu ứng dụng">
         <div class="sidebar-group">
           <a class="nav-link active" href="#dashboard" data-nav-link><span class="nav-icon">▦</span><span>Bảng tin</span></a>
-          <a class="nav-link" href="#layout"><span class="nav-icon">▧</span><span>Sơ đồ căn hộ</span></a>
-          <a class="nav-link" href="#booking"><span class="nav-icon">▣</span><span>Booking</span></a>
+          <a class="nav-link" href="#layout"><span class="nav-icon">▧</span><span>Sơ đồ tòa &amp; phòng</span></a>
+          <a class="nav-link" href="#booking"><span class="nav-icon">▣</span><span>Đặt phòng ngắn hạn</span></a>
         </div>
         <p class="sidebar-label">Vận hành</p>
         <div class="sidebar-group">
-          <button class="nav-link nav-trigger" type="button" data-accordion="data"><span class="nav-icon">◈</span><span>Danh mục dữ liệu</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="data"><a href="#locations">Khu vực</a><a href="#customers">Khách hàng</a><a href="#finance">Tài chính</a></div>
-          <button class="nav-link nav-trigger" type="button" data-accordion="customers"><span class="nav-icon">♙</span><span>Khách hàng</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="customers"><a href="#deposits">Đặt cọc</a><a href="#contracts">Hợp đồng</a><a href="#residents">Khách hàng</a><a href="#vehicles">Phương tiện</a></div>
-          <button class="nav-link nav-trigger" type="button" data-accordion="finance"><span class="nav-icon">▱</span><span>Tài chính</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="finance"><a href="#utilities">Quản lý điện nước</a><a href="#meters">Ghi chỉ số</a><a href="#invoices">Hóa đơn</a><a href="#cashflow">Thu chi</a><a href="#commission">Hoa hồng</a></div>
-          <a class="nav-link" href="#notifications"><span class="nav-icon">♧</span><span>Thông báo</span></a>
-          <a class="nav-link" href="#feedback"><span class="nav-icon">♧</span><span>Hỗ trợ cư dân</span></a>
-          <a class="nav-link" href="#tasks"><span class="nav-icon">▤</span><span>Công việc</span></a>
+          <button class="nav-link nav-trigger" type="button" data-accordion="customers" aria-expanded="false"><span class="nav-icon">♙</span><span>Khách thuê</span><span class="chevron" aria-hidden="true"></span></button>
+          <div class="submenu" data-submenu="customers"><a href="#residents">Hồ sơ khách thuê</a><a href="#deposits">Đặt cọc thuê</a></div>
+          <button class="nav-link nav-trigger" type="button" data-accordion="utilities-finance" aria-expanded="false"><span class="nav-icon">▱</span><span>Điện nước &amp; thu phí</span><span class="chevron" aria-hidden="true"></span></button>
+          <div class="submenu" data-submenu="utilities-finance"><a href="#utilities">Tổng hợp điện nước</a><a href="#meters">Ghi chỉ số điện nước</a><a href="#invoices">Hóa đơn khách thuê</a></div>
+          <button class="nav-link nav-trigger" type="button" data-accordion="finance" data-owner-only aria-expanded="false"><span class="nav-icon">▱</span><span>Tài chính nội bộ</span><span class="chevron" aria-hidden="true"></span></button>
+          <div class="submenu" data-submenu="finance" data-owner-only><a href="#cashflow">Sổ thu chi</a><a href="#commission">Hoa hồng môi giới</a></div>
+          <button class="nav-link nav-trigger" type="button" data-accordion="service-work" aria-expanded="false"><span class="nav-icon">▤</span><span>Chăm sóc &amp; công việc</span><span class="chevron" aria-hidden="true"></span></button>
+          <div class="submenu" data-submenu="service-work"><a href="#notifications">Thông báo cư dân</a><a href="#feedback">Yêu cầu cư dân</a><a href="#tasks">Công việc nội bộ</a></div>
         </div>
         <p class="sidebar-label">Báo cáo</p>
         <div class="sidebar-group">
-          <button class="nav-link nav-trigger" type="button" data-accordion="property-reports"><span class="nav-icon">▥</span><span>Báo cáo bất động sản</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="property-reports"><a href="#empty">Căn hộ trống</a><a href="#depositing">Căn hộ sắp trống</a><a href="#occupancy">Tỷ lệ lấp đầy</a></div>
-          <button class="nav-link nav-trigger" type="button" data-accordion="financial-reports"><span class="nav-icon">⌁</span><span>Báo cáo tài chính</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="financial-reports"><a href="#daily">Tài khoản theo ngày</a><a href="#cashflow-report">Dòng tiền</a><a href="#profit">Phân bổ lợi nhuận</a><a href="#debts">Khách nợ tiền</a><a href="#payments">Lịch thanh toán</a><a href="#prepayments">Tiền thừa</a><a href="#deposit-ledger">Danh sách tiền cọc</a></div>
+          <button class="nav-link nav-trigger" type="button" data-accordion="property-reports" aria-expanded="false"><span class="nav-icon">▥</span><span>Báo cáo bất động sản</span><span class="chevron" aria-hidden="true"></span></button>
+          <div class="submenu" data-submenu="property-reports"><a href="#empty">Không gian đang trống</a><a href="#depositing">Không gian đang đặt cọc</a><a href="#occupancy">Tỷ lệ lấp đầy</a></div>
+          <button class="nav-link nav-trigger" type="button" data-accordion="financial-reports" data-owner-only aria-expanded="false"><span class="nav-icon">⌁</span><span>Báo cáo tài chính</span><span class="chevron" aria-hidden="true"></span></button>
+          <div class="submenu" data-submenu="financial-reports" data-owner-only><a href="#profit">Tổng hợp lợi nhuận</a><a href="#debts">Công nợ khách thuê</a><a href="#payments">Lịch thu tiền</a><a href="#prepayments">Tiền khách trả thừa</a><a href="#deposit-ledger">Tổng hợp tiền cọc</a></div>
         </div>
         <p class="sidebar-label">Cài đặt</p>
         <div class="sidebar-group">
-          <a class="nav-link" href="#general"><span class="nav-icon">⚙</span><span>Cài đặt chung</span></a>
-          <button class="nav-link nav-trigger" type="button" data-accordion="other"><span class="nav-icon">▦</span><span>Danh mục khác</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="other"><a href="#finance-settings">Tài chính</a><a href="#assets">Tài sản</a><a href="#providers">Nhà cung cấp</a><a href="#warehouses">Kho tài sản</a><a href="#asset-types">Loại tài sản</a><a href="#moving-logs">Lịch sử di chuyển tài sản</a><a href="#asset-fix">Lịch sử sửa chữa</a><a href="#hotline">Quản lý hotline</a><a href="#work-types">Loại công việc</a><a href="#categories">Danh mục chung</a><a href="#floors">Danh sách tầng</a></div>
-          <button class="nav-link nav-trigger" type="button" data-accordion="templates"><span class="nav-icon">▤</span><span>Mẫu biểu</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="templates"><a href="#signatures">Mẫu chữ ký</a><a href="#deposit-contract">Hợp đồng đặt cọc</a><a href="#rental-contract">Hợp đồng thuê</a><a href="#handover">Biên bản bàn giao</a><a href="#invoice-template">Mẫu hóa đơn</a><a href="#cash-template">Mẫu thu chi</a></div>
-          <button class="nav-link nav-trigger" type="button" data-accordion="accounts"><span class="nav-icon">▣</span><span>Tài khoản</span><span class="chevron">⌄</span></button>
-          <div class="submenu" data-submenu="accounts"><a href="#accounts">Loại tài khoản</a><a href="#users">Tài khoản người dùng</a></div>
+          <a class="nav-link" href="#general" data-owner-only><span class="nav-icon">⚙</span><span>Tài khoản &amp; hệ thống</span></a>
+          <button class="nav-link nav-trigger" type="button" data-accordion="other" aria-expanded="false"><span class="nav-icon">▦</span><span>Tài sản &amp; kho</span><span class="chevron" aria-hidden="true"></span></button>
+          <div class="submenu" data-submenu="other"><a href="#assets">Danh sách tài sản</a><a href="#providers">Nhà cung cấp</a><a href="#warehouses">Kho tài sản</a><a href="#asset-types">Loại tài sản</a><a href="#moving-logs">Điều chuyển tài sản</a><a href="#asset-fix">Sửa chữa tài sản</a></div>
+          <a class="nav-link" href="#users" data-owner-only><span class="nav-icon">▣</span><span>Tài khoản đăng nhập</span></a>
         </div>
       </nav>
       <button class="sidebar-collapse" type="button" data-sidebar-collapse aria-label="Thu gọn menu">‹</button>
@@ -77,45 +73,43 @@
         <div class="page-heading"><strong>PHÚ GIA LAND - QUẢN LÝ BẤT ĐỘNG SẢN &amp; CƯ DÂN SỐ</strong><span>Bảng tin</span></div>
         <div class="topbar-actions">
           <button class="round-button notification-button" type="button" data-notifications aria-label="Thông báo">♧<b>1</b></button>
-          <button class="round-button" type="button" data-toast="Chúc bạn một ngày làm việc hiệu quả" aria-label="Yêu thích">★</button>
           <button class="theme-toggle" type="button" data-theme-toggle aria-label="Đổi giao diện"><span>☼</span><span>☾</span></button>
           <button class="profile profile-button" type="button" data-profile aria-label="Mở hồ sơ"><div><strong>Nguyễn Hữu Phú</strong><small>Chủ nhà</small></div><span class="avatar">NHP</span></button>
         </div>
       </header>
 
       <main class="main-content" id="dashboard">
-        <div class="content-toolbar"><button class="building-select" type="button" data-building-select>Chọn tòa nhà <span>⌄</span></button><button class="primary-button" type="button" data-add-building>＋ Tòa nhà</button></div>
+        <div class="content-toolbar"><button class="building-select" type="button" data-building-select>Chọn tòa nhà <span class="select-chevron" aria-hidden="true"></span></button><button class="primary-button" type="button" data-add-building>＋ Tòa nhà</button></div>
         <section class="overview-layout" aria-label="Tổng quan tài sản">
-          <div class="asset-stats">
+          <div class="asset-stats" data-asset-stats>
             <a class="stat-card patterned" href="#buildings"><span class="stat-icon">▥</span><strong>0</strong><span>Tòa nhà</span></a>
             <a class="stat-card patterned" href="#apartments"><span class="stat-icon">▤</span><strong>0</strong><span>Căn hộ</span></a>
-            <a class="stat-card patterned" href="#beds"><span class="stat-icon">▰</span><strong>0</strong><span>giường</span></a>
+            <a class="stat-card patterned" href="#beds" data-bed-stat-card><span class="stat-icon">▰</span><strong>0</strong><span>Giường</span></a>
             <div class="stat-card patterned"><span class="stat-icon">◉</span><strong>0%</strong><span>Tỷ lệ lấp đầy</span></div>
           </div>
           <div class="occupancy-stack">
-            <div class="status-row"><div class="status-cell green"><strong>Căn hộ đang thuê</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div><div class="status-cell yellow"><strong>Căn hộ đang cọc</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div><div class="status-cell red"><strong>Căn hộ đang trống</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div><div class="status-cell gray"><strong>Căn hộ ngừng hoạt động</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div></div>
-            <div class="status-row"><div class="status-cell green"><strong>Giường đang thuê</strong><b>0</b><span>0.00 % <em>giường</em></span></div><div class="status-cell yellow"><strong>Giường đang cọc</strong><b>0</b><span>0.00 % <em>giường</em></span></div><div class="status-cell red"><strong>Giường đang trống</strong><b>0</b><span>0.00 % <em>giường</em></span></div><div class="status-cell gray"><strong>Giường ngừng hoạt động</strong><b>0</b><span>0.00 % <em>giường</em></span></div></div>
+            <div class="status-row" data-apartment-status-row><div class="status-cell green"><strong>Căn hộ đang thuê</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div><div class="status-cell yellow"><strong>Căn hộ đang cọc</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div><div class="status-cell red"><strong>Căn hộ đang trống</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div><div class="status-cell gray"><strong>Căn hộ ngừng hoạt động</strong><b>0</b><span>0.00 % <em>căn hộ</em></span></div></div>
+            <div class="status-row" data-bed-status-row><div class="status-cell green"><strong>Giường ở ghép đang thuê</strong><b>0</b><span>0.00 % <em>giường</em></span></div><div class="status-cell yellow"><strong>Giường ở ghép đang cọc</strong><b>0</b><span>0.00 % <em>giường</em></span></div><div class="status-cell red"><strong>Giường ở ghép đang trống</strong><b>0</b><span>0.00 % <em>giường</em></span></div><div class="status-cell gray"><strong>Giường ở ghép ngừng hoạt động</strong><b>0</b><span>0.00 % <em>giường</em></span></div></div>
           </div>
         </section>
 
         <section class="grid-three" aria-label="Tổng quan kinh doanh">
           <article class="panel"><div class="panel-heading"><h2>Tổng quan hỗ trợ cư dân</h2><a href="#feedback">Xem chi tiết</a></div><div class="panel-body split-metrics"><a href="#feedback"><strong>0</strong><span>Phản ánh mới</span><i class="progress"></i></a><a href="#feedback"><strong>0</strong><span>Đang xử lý</span><i class="segments"></i></a></div><div class="panel-foot"><span>Đã hoàn tất<b>0</b></span><span>Tổng phản ánh<b>0</b></span></div></article>
-          <article class="panel"><div class="panel-heading"><h2>Tổng quan đặt cọc</h2><a href="#deposits">Xem chi tiết</a></div><div class="panel-body split-metrics"><a href="#deposits"><strong>0</strong><span>Khách cọc mới</span><i class="progress"></i></a><a href="#rentals"><strong>0</strong><span>Khách vào thuê</span><i class="segments"></i></a></div><div class="panel-foot"><span>Top sale<b>N/A</b></span><span>Tỷ lệ chuyển đổi<b>0%</b></span></div></article>
-          <article class="panel"><div class="panel-heading"><h2>Tổng quan hợp đồng</h2><a href="#contracts">Xem chi tiết</a></div><div class="contract-body"><p class="positive">Ký mới trong tháng <b>0</b></p><p class="negative">Thanh lý trong tháng <b>0</b></p><div class="mini-stats"><span><b>0</b>Đang thuê</span><span><b>0</b>Sắp chuyển đi</span><span><b>0</b>Sắp hết hạn</span></div></div></article>
+          <article class="panel"><div class="panel-heading"><h2>Tổng quan đặt cọc</h2><a href="#deposits">Xem chi tiết</a></div><div class="panel-body split-metrics"><a href="#deposits"><strong>0</strong><span>Khách cọc mới</span><i class="progress"></i></a><a href="#residents"><strong>0</strong><span>Khách vào thuê</span><i class="segments"></i></a></div><div class="panel-foot"><span>Top sale<b>N/A</b></span><span>Tỷ lệ chuyển đổi<b>0%</b></span></div></article>
         </section>
 
         <section class="grid-wide" aria-label="Tài chính">
-          <article class="panel invoice-panel"><div class="panel-heading"><h2>Tiền hóa đơn tháng này</h2><a href="#invoices">Xem chi tiết</a></div><div class="invoice-body"><small>Tất cả</small><div class="amount">0 đ <em>0.00 % tháng trước</em></div><div class="income-bar"><i></i><b></b></div><div class="legend"><span>● Đã thu</span><span>● Chưa thu</span></div><hr><ul><li>▤ <span>Tiền nhà</span><b>0 đ　0%</b></li><li>♧ <span>Tiền điện</span><b>0 đ　0%</b></li><li>♨ <span>Tiền nước</span><b>0 đ　0%</b></li><li>▱ <span>Dịch vụ khác</span><b>0 đ　0%</b></li></ul></div></article>
-          <article class="panel chart-panel"><div class="panel-heading"><h2>Biểu đồ thu chi</h2><a class="external-link" href="#cashflow">↗</a></div><div class="chart-body"><div class="y-axis"><span>1,000,000 đ</span><span>800,000 đ</span><span>600,000 đ</span><span>400,000 đ</span><span>200,000 đ</span><span>0 đ</span></div><div class="chart-area"><div class="grid-lines"></div><svg viewBox="0 0 700 220" preserveAspectRatio="none" aria-label="Biểu đồ thu chi trống"><path d="M0 210 L700 210" class="chart-income"></path><path d="M0 210 L700 210" class="chart-expense"></path></svg></div></div></article>
+          <article class="panel invoice-panel"><div class="panel-heading"><h2>Doanh thu ghi nhận tháng này</h2><a href="#invoices">Xem chi tiết</a></div><div class="invoice-body"><small>Phòng chỉ ghi nhận sau khi trả</small><div class="amount">0 đ <em>0.00 % tháng trước</em></div><div class="income-bar"><i></i><b></b></div><div class="legend"><span>● Đã thu</span><span>● Chưa thu</span></div><hr><ul><li>▤ <span>Tiền phòng/nhà</span><b>0 đ　0%</b></li><li>♧ <span>Tiền điện</span><b>0 đ　0%</b></li><li>♨ <span>Tiền nước</span><b>0 đ　0%</b></li><li>▱ <span>Dịch vụ khác</span><b>0 đ　0%</b></li></ul></div></article>
+          <article class="panel chart-panel" data-owner-only><div class="panel-heading"><h2>Biểu đồ thu chi</h2><a class="external-link" href="#cashflow">↗</a></div><div class="chart-body"><div class="y-axis"><span>1,000,000 đ</span><span>800,000 đ</span><span>600,000 đ</span><span>400,000 đ</span><span>200,000 đ</span><span>0 đ</span></div><div class="chart-area"><div class="grid-lines"></div><svg viewBox="0 0 700 220" preserveAspectRatio="none" aria-label="Biểu đồ thu chi trống"><path d="M0 210 L700 210" class="chart-income"></path><path d="M0 210 L700 210" class="chart-expense"></path></svg></div></div></article>
         </section>
 
         <section class="grid-three lower-grid" aria-label="Công việc và đánh giá">
           <article class="panel"><div class="panel-heading"><h2>Tổng quan công việc</h2><a href="#tasks">Xem chi tiết</a></div><div class="task-body"><p>Phát sinh trong tháng <b>0</b></p><p>Hoàn thành <b>0</b></p><div class="mini-stats"><span><b class="green-text">0</b>Chưa làm</span><span><b class="yellow-text">0</b>Đang làm</span><span><b class="violet-text">0</b>Chờ nghiệm thu</span></div></div></article>
-          <article class="panel review-panel"><div class="panel-heading stacked"><div><h2>Đánh giá khách hàng</h2><small>Dựa trên 0 đánh giá</small></div></div><div class="reviews"> <div>5 <span>★★★★★</span><small>0 (0%)</small></div><div>4 <span>★★★★☆</span><small>0 (0%)</small></div><div>3 <span>★★★☆☆</span><small>0 (0%)</small></div><div>2 <span>★★☆☆☆</span><small>0 (0%)</small></div><div>1 <span>★☆☆☆☆</span><small>0 (0%)</small></div></div></article>
-          <div class="incident-grid"><article><h3>Tòa nhà nhiều sự cố nhất</h3><p>0 <small>sự cố/công việc</small></p></article><article><h3>Căn hộ nhiều sự cố nhất</h3><p>0 <small>sự cố/công việc</small></p></article><article><h3>Loại công việc phát sinh nhiều nhất</h3><p>0 <small>sự cố/công việc</small></p></article><article><h3>Nhân viên còn nhiều việc nhất</h3><p>0 <small>việc chưa xong</small></p></article></div>
+          <article class="panel review-panel"><div class="panel-heading"><h2>Khách hàng</h2><a href="#residents">Xem danh sách</a></div><div class="task-body"><p>Đang thuê <b data-dashboard-renting>0</b></p><p>Đã chuyển đi <b data-dashboard-moved>0</b></p><div class="mini-stats"><span><b data-dashboard-visitors>0</b>Khách vãng lai</span><span><b data-dashboard-linked>0</b>Có tài khoản</span><span><b data-dashboard-unlinked>0</b>Chưa có tài khoản</span></div></div></article>
+          <div class="incident-grid"><article><h3>Hóa đơn chưa thanh toán</h3><p data-dashboard-unpaid>0 <small>hóa đơn</small></p></article><article><h3>Căn hộ chưa gán công tơ</h3><p data-dashboard-unmetered>0 <small>căn hộ</small></p></article><article><h3>Phản ánh khẩn cấp</h3><p data-dashboard-urgent>0 <small>yêu cầu</small></p></article><article><h3>Công việc chưa hoàn tất</h3><p data-dashboard-open-tasks>0 <small>công việc</small></p></article></div>
         </section>
       </main>
-      <footer class="footer"><span>2026 © <b>PHÚ GIA LAND</b></span><nav><a href="#docs">Tài liệu</a><a href="#pricing">Bảng giá</a><a href="#changelog">Change log</a><a href="#support">Hỗ trợ</a></nav></footer>
+      <footer class="footer"><span>2026 © <b>PHÚ GIA LAND</b></span></footer>
     </div>
   </div>
   <div class="modal-backdrop" data-modal-backdrop hidden>
@@ -125,6 +119,6 @@
     </section>
   </div>
   <div class="toast" data-toast-box role="status" aria-live="polite"></div>
-  <script src="app.js?v=56"></script>
+  <script src="app.js?v=63"></script>
 </body>
 </html>

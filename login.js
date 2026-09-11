@@ -15,10 +15,12 @@ form.addEventListener('submit', async (event) => {
       body: JSON.stringify({ email: formData.get('email'), password: formData.get('password') })
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Không thể đăng nhập');
+    if (!response.ok) throw new Error(response.status === 429 ? 'Too many attempts' : payload.error || 'Không thể đăng nhập');
+    sessionStorage.setItem('nvp-user-role', payload.role);
+    sessionStorage.setItem('nvp-user-name', payload.name || '');
     window.location.assign(payload.passwordChangeRequired ? '/?change-password=required' : '/');
   } catch (error) {
-    errorMessage.textContent = error.message === 'Invalid credentials' ? 'Email hoặc mật khẩu không đúng.' : 'Không thể đăng nhập. Kiểm tra cấu hình máy chủ.';
+    errorMessage.textContent = error.message === 'Invalid credentials' ? 'Email hoặc mật khẩu không đúng.' : error.message === 'Too many attempts' ? 'Bạn đã thử quá nhiều lần. Vui lòng đợi 5 phút.' : 'Không thể đăng nhập. Kiểm tra kết nối máy chủ.';
     errorMessage.hidden = false;
     submitButton.disabled = false;
     submitButton.textContent = 'Vào hệ thống';

@@ -1,4 +1,8 @@
 .homestay-calendar { display: grid; gap: 14px; }
+.homestay-range-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; }
+.homestay-range-controls label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.homestay-range-controls input { min-height: 40px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); padding: 8px 10px; font: inherit; }
+.homestay-range-controls button { min-height: 40px; }
 .homestay-calendar-toolbar { display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; gap: 8px; }
 .homestay-calendar-toolbar strong { text-align: center; text-transform: capitalize; }
 .homestay-calendar-toolbar button { width: 38px; height: 36px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font-size: 24px; cursor: pointer; }
@@ -8,6 +12,7 @@
 .homestay-calendar-day { border: 1px solid var(--line); background: #e8f5ec; color: #176b38; font: 700 13px Manrope, sans-serif; cursor: pointer; }
 .homestay-calendar-day.booked { background: #f8e8e7; border-color: #e4aaa6; color: #9d332b; }
 .homestay-calendar-day:disabled { background: #f1f2f1; border-color: #e4e6e5; color: #a1a8a4; cursor: not-allowed; }
+@media (max-width: 620px) { .homestay-range-controls { grid-template-columns: 1fr; } }
 .smart-home-advanced, .smart-home-api { border: 1px solid var(--line); border-radius: 6px; background: #f8faf8; }
 .smart-home-advanced > summary, .smart-home-api > summary { padding: 11px 12px; color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
 .smart-home-advanced[open] > summary, .smart-home-api[open] > summary { border-bottom: 1px solid var(--line); color: var(--ink); }

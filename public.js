@@ -1,9 +1,12 @@
 const apartmentList = document.querySelector('[data-apartment-list]');
 const availabilityCount = document.querySelector('[data-availability-count]');
-const propertyTypeLabels = { apartment: 'Căn hộ', homestay: 'Homestay', office: 'Văn phòng', shophouse: 'Shophouse', 'whole-building': 'Tòa nhà nguyên căn' };
+const availabilityTitle = document.querySelector('#availability-title');
+const propertyTypeLabels = { apartment: 'Căn hộ', homestay: 'Homestay', 'shared-room': 'Phòng ở ghép', office: 'Văn phòng', shophouse: 'Mặt bằng kinh doanh', 'whole-building': 'Tòa nhà nguyên căn' };
 let availableApartments = [];
 let selectedPropertyType = 'all';
-const availabilityDateInput = document.querySelector('[data-availability-date]');
+const availabilityFromInput = document.querySelector('[data-availability-from]');
+const availabilityToInput = document.querySelector('[data-availability-to]');
+const homestayDateFilter = document.querySelector('[data-homestay-date-filter]');
 
 function dateKey(date) {
   const offset = date.getTimezoneOffset() * 60_000;
@@ -16,15 +19,17 @@ function formatDate(date) {
 
 function renderHomestayCalendar(apartment) {
   if (apartment.propertyType !== 'homestay') return '';
-  const start = new Date(`${availabilityDateInput.value}T00:00:00`);
+  const start = new Date(`${availabilityFromInput.value}T00:00:00`);
+  const end = new Date(`${availabilityToInput.value}T00:00:00`);
   const bookedDates = new Set(apartment.bookedDates || []);
-  const days = Array.from({ length: 14 }, (_, index) => {
+  const dayCount = Math.max(Math.round((end - start) / 86_400_000) + 1, 1);
+  const days = Array.from({ length: dayCount }, (_, index) => {
     const date = new Date(start);
     date.setDate(start.getDate() + index);
     const key = dateKey(date);
     return `<span class="stay-date ${bookedDates.has(key) ? 'booked' : 'available'}"><b>${formatDate(key)}</b>${bookedDates.has(key) ? 'Đã thuê' : 'Trống'}</span>`;
   }).join('');
-  return `<div class="stay-calendar"><strong>Lịch 14 ngày từ ${formatDate(availabilityDateInput.value)}</strong><div class="stay-date-grid">${days}</div></div>`;
+  return `<div class="stay-calendar"><strong>Khoảng thuê ${formatDate(availabilityFromInput.value)} - ${formatDate(availabilityToInput.value)}</strong><div class="stay-date-grid">${days}</div></div>`;
 }
 
 function escapeHtml(value) {
@@ -32,14 +37,16 @@ function escapeHtml(value) {
 }
 
 function renderApartments(apartments) {
+  const selectedTypeLabel = selectedPropertyType === 'all' ? 'Bất động sản' : propertyTypeLabels[selectedPropertyType] || 'Bất động sản';
   apartmentList.setAttribute('aria-busy', 'false');
-  availabilityCount.textContent = apartments.length ? `${apartments.length} bất động sản đang trống` : 'Hiện chưa có bất động sản trống';
+  availabilityTitle.textContent = `${selectedTypeLabel} đang trống`;
+  availabilityCount.textContent = apartments.length ? `${apartments.length} ${selectedTypeLabel.toLocaleLowerCase('vi-VN')} đang trống` : `Hiện chưa có ${selectedTypeLabel.toLocaleLowerCase('vi-VN')} trống`;
   if (!apartments.length) {
-    apartmentList.innerHTML = '<p class="state-message">Hiện chưa có bất động sản phù hợp. Vui lòng quay lại sau.</p>';
+    apartmentList.innerHTML = `<p class="state-message">Hiện chưa có ${selectedTypeLabel.toLocaleLowerCase('vi-VN')} phù hợp. Vui lòng quay lại sau.</p>`;
     return;
   }
   apartmentList.innerHTML = apartments.map((apartment) => {
-    const detail = apartment.propertyType === 'whole-building' ? '<strong>Cho thuê nguyên căn</strong>' : apartment.propertyType === 'office' ? '<strong>Không gian văn phòng</strong>' : apartment.propertyType === 'shophouse' ? '<strong>Mặt bằng thương mại</strong>' : apartment.propertyType === 'homestay' ? '<strong>Thuê theo ngày</strong>' : `<strong>${apartment.beds || 0}</strong> giường`;
+    const detail = apartment.propertyType === 'whole-building' ? '<strong>Cho thuê nguyên căn</strong>' : apartment.propertyType === 'office' ? '<strong>Không gian văn phòng</strong>' : apartment.propertyType === 'shophouse' ? '<strong>Không gian kinh doanh</strong>' : apartment.propertyType === 'homestay' ? `<strong>Thuê nguyên phòng · Sức chứa ${apartment.beds || 0} giường</strong>` : apartment.propertyType === 'shared-room' ? `<strong>${apartment.beds || 0}</strong> giường cho thuê riêng` : '<strong>Cho thuê căn hộ</strong>';
     const media = Array.isArray(apartment.media) ? apartment.media : [];
     const video = media.find((item) => item.kind === 'video');
     const image = apartment.image || media.find((item) => item.kind === 'image')?.url;
@@ -62,10 +69,11 @@ function renderSelectedPropertyType() {
 
 async function loadAvailability() {
   try {
-    const response = await fetch(`/api/availability?date=${encodeURIComponent(availabilityDateInput.value)}`);
+    const query = selectedPropertyType === 'homestay' ? `?from=${encodeURIComponent(availabilityFromInput.value)}&to=${encodeURIComponent(availabilityToInput.value)}` : '';
+    const response = await fetch(`/api/availability${query}`);
     if (!response.ok) throw new Error('Unable to load availability');
     const payload = await response.json();
-    availableApartments = Array.isArray(payload.apartments) ? payload.apartments : [];
+    availableApartments = Array.isArray(payload.apartments) ? payload.apartments.map((apartment) => apartment.propertyType === 'sleepbox' ? { ...apartment, propertyType: 'shared-room' } : apartment) : [];
     renderSelectedPropertyType();
   } catch (error) {
     apartmentList.setAttribute('aria-busy', 'false');
@@ -77,11 +85,22 @@ async function loadAvailability() {
 document.querySelectorAll('[data-property-filter]').forEach((button) => button.addEventListener('click', () => {
   selectedPropertyType = button.dataset.propertyFilter;
   document.querySelectorAll('[data-property-filter]').forEach((item) => item.classList.toggle('active', item === button));
-  renderSelectedPropertyType();
+  homestayDateFilter.hidden = selectedPropertyType !== 'homestay';
+  loadAvailability();
 }));
 
-availabilityDateInput.value = dateKey(new Date());
-availabilityDateInput.min = availabilityDateInput.value;
-availabilityDateInput.addEventListener('change', loadAvailability);
+const today = new Date();
+const defaultEnd = new Date(today);
+defaultEnd.setDate(today.getDate() + 1);
+availabilityFromInput.value = dateKey(today);
+availabilityToInput.value = dateKey(defaultEnd);
+availabilityFromInput.min = availabilityFromInput.value;
+availabilityToInput.min = availabilityFromInput.value;
+availabilityFromInput.addEventListener('change', () => {
+  availabilityToInput.min = availabilityFromInput.value;
+  if (availabilityToInput.value < availabilityFromInput.value) availabilityToInput.value = availabilityFromInput.value;
+  loadAvailability();
+});
+availabilityToInput.addEventListener('change', loadAvailability);
 
 loadAvailability();

@@ -1,9 +1,11 @@
 node_modules/
+coverage/
+.nyc_output/
+tmp/
 .env
 .env.*
 !.env.example
-data/state.json
-data/documents/
-data/media/
+data/
+*.zip
 *.log
 .DS_Store
