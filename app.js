@@ -1,6 +1,6 @@
-const frontendCacheName = 'phu-gia-land-v66';
+const frontendCacheName = 'phu-gia-land-v67';
 if ('caches' in window) caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('phu-gia-land-') && key !== frontendCacheName).map((key) => caches.delete(key)))).catch(() => {});
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=66').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=67').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
 
 const staffSensitiveStorageKeys = ['nvp-cashflow', 'nvp-commissions', 'nvp-deposit-ledger', 'nvp-users', 'nvp-smart-home-config'];
 let currentUserRole = sessionStorage.getItem('nvp-user-role') || '';
@@ -79,7 +79,7 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 }
 
-const moneyFieldNames = new Set(['amount', 'deposit', 'rentAmount', 'serviceFee', 'electricityRate', 'waterRate', 'managementFee', 'waterFixedAmount', 'rate', 'cost']);
+const moneyFieldNames = new Set(['amount', 'deposit', 'rentAmount', 'serviceFee', 'electricityRate', 'waterRate', 'waterFixedAmount', 'rate', 'cost']);
 
 function parseMoney(value) {
   const amount = Number(String(value ?? '').replace(/\D/g, ''));
@@ -458,7 +458,7 @@ function setupBillingSettingsForm(form) {
   const groups = [
     ['Thu tiền', 'Phương thức nhận tiền và hạn thanh toán của hóa đơn hằng tháng.', ['debtAccount', 'paymentDay']],
     ['Tài khoản nhận tiền', 'Chọn ngân hàng và nhập số tài khoản để tạo VietQR trên hóa đơn đã duyệt.', ['bankName', 'bankNumber', 'bankHolder']],
-    ['Điện, nước và phí định kỳ', 'Mức tại căn hộ được ưu tiên, sau đó đến mức theo tầng, cuối cùng là mức mặc định của tòa nhà.', ['electricityRate', 'electricityFloorRates', 'waterBillingMode', 'waterRate', 'waterFixedAmount', 'waterFloorRates', 'managementFee']]
+    ['Điện, nước và phí định kỳ', 'Mức tại căn hộ được ưu tiên, sau đó đến mức theo tầng, cuối cùng là mức mặc định của tòa nhà.', ['electricityRate', 'electricityFloorRates', 'waterBillingMode', 'waterRate', 'waterFixedAmount', 'waterFloorRates']]
   ];
   groups.forEach(([title, description, names]) => {
     const heading = document.createElement('div');
@@ -478,8 +478,7 @@ function setupBillingSettingsForm(form) {
     waterBillingMode: 'Theo m³ dùng nhật ký đồng hồ; mức cố định thu đều mỗi tháng.',
     waterRate: 'Mức mặc định khi tính nước theo chỉ số đồng hồ.',
     waterFixedAmount: 'Mức mặc định khi căn hộ và tầng chưa có mức riêng.',
-    waterFloorRates: 'Không bắt buộc. Ví dụ: 1:150.000, 2:180.000.',
-    managementFee: 'Mức mặc định; phí riêng tại căn hộ sẽ được ưu tiên.'
+    waterFloorRates: 'Không bắt buộc. Ví dụ: 1:150.000, 2:180.000.'
   };
   Object.entries(help).forEach(([name, text]) => label(name)?.insertAdjacentHTML('beforeend', `<small class="form-hint">${text}</small>`));
   label('debtAccount').firstChild.textContent = 'Phương thức thu tiền';
@@ -519,7 +518,7 @@ function openBuildingForm(buildingToEdit = null) {
     <section class="form-section"><div class="form-section-title"><strong>Thông tin quản lý</strong></div><div class="form-grid"><label>Họ tên người quản lý<input name="managerName" maxlength="100" value="${escapeHtml(settings.managerName || '')}" placeholder="Ví dụ: Nguyễn Văn An"></label><label>Số điện thoại quản lý<input name="companyPhone" type="tel" maxlength="30" value="${escapeHtml(settings.companyPhone || '')}" placeholder="Ví dụ: 0981 444 413"></label></div></section>
     <section class="form-section"><div class="form-section-title"><strong>Ảnh/video tòa nhà</strong></div><div class="form-grid"><label class="full-field">Media nguyên căn<input name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" multiple><small class="form-hint">Dùng cho trường hợp cho thuê nguyên căn. Tối đa 5 ảnh và 1 video.</small></label></div></section>
     <section class="form-section"><div class="form-section-title"><strong>Dịch vụ tòa nhà</strong></div><div class="service-list">${serviceItems}</div><button class="service-add-button" type="button" data-service-add>＋ Thêm dịch vụ</button></section>
-    <section class="form-section"><div class="form-section-title"><strong>Cấu hình thanh toán &amp; dịch vụ</strong></div><div class="form-grid"><label>Tài khoản gạch nợ tự động<select name="debtAccount"><option value="">Chọn</option><option ${settings.debtAccount === 'bank' ? 'selected' : ''} value="bank">Tài khoản ngân hàng</option><option ${settings.debtAccount === 'cash' ? 'selected' : ''} value="cash">Tài khoản tiền mặt</option></select></label><label>Ngày thanh toán hằng tháng<input name="paymentDay" type="number" min="1" max="31" value="${Number(settings.paymentDay || 5)}"></label><label>Ngân hàng nhận tiền<input name="bankName" maxlength="80" value="${escapeHtml(settings.bankName || '')}" placeholder="Ví dụ: MB Bank"></label><label>Mã BIN ngân hàng<input name="bankBin" inputmode="numeric" maxlength="12" value="${escapeHtml(settings.bankBin || '')}" placeholder="Ví dụ: 970422"></label><label>Số tài khoản<input name="bankNumber" inputmode="numeric" maxlength="30" value="${escapeHtml(settings.bankNumber || '')}" placeholder="Nhập số tài khoản"></label><label>Tên chủ tài khoản<input name="bankHolder" maxlength="100" value="${escapeHtml(settings.bankHolder || '')}" placeholder="Tên chủ tài khoản"></label><label>Đơn giá điện (đ/kWh)<input name="electricityRate" type="number" min="0" value="${Number(settings.electricityRate || 0)}"></label><label>Đơn giá nước (đ/khối)<input name="waterRate" type="number" min="0" value="${Number(settings.waterRate || 0)}"></label><label>Phí quản lý (đ/tháng)<input name="managementFee" type="number" min="0" value="${Number(settings.managementFee || 0)}"></label></div></section>
+    <section class="form-section"><div class="form-section-title"><strong>Cấu hình thanh toán &amp; dịch vụ</strong></div><div class="form-grid"><label>Tài khoản gạch nợ tự động<select name="debtAccount"><option value="">Chọn</option><option ${settings.debtAccount === 'bank' ? 'selected' : ''} value="bank">Tài khoản ngân hàng</option><option ${settings.debtAccount === 'cash' ? 'selected' : ''} value="cash">Tài khoản tiền mặt</option></select></label><label>Ngày thanh toán hằng tháng<input name="paymentDay" type="number" min="1" max="31" value="${Number(settings.paymentDay || 5)}"></label><label>Ngân hàng nhận tiền<input name="bankName" maxlength="80" value="${escapeHtml(settings.bankName || '')}" placeholder="Ví dụ: MB Bank"></label><label>Mã BIN ngân hàng<input name="bankBin" inputmode="numeric" maxlength="12" value="${escapeHtml(settings.bankBin || '')}" placeholder="Ví dụ: 970422"></label><label>Số tài khoản<input name="bankNumber" inputmode="numeric" maxlength="30" value="${escapeHtml(settings.bankNumber || '')}" placeholder="Nhập số tài khoản"></label><label>Tên chủ tài khoản<input name="bankHolder" maxlength="100" value="${escapeHtml(settings.bankHolder || '')}" placeholder="Tên chủ tài khoản"></label><label>Đơn giá điện (đ/kWh)<input name="electricityRate" type="number" min="0" value="${Number(settings.electricityRate || 0)}"></label><label>Đơn giá nước (đ/khối)<input name="waterRate" type="number" min="0" value="${Number(settings.waterRate || 0)}"></label></div></section>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">Lưu</button></div>
   </form>`, () => {
     document.querySelector('[data-modal]').classList.add('building-form-modal');
@@ -578,7 +577,7 @@ function openBuildingForm(buildingToEdit = null) {
         const uploadedMedia = [];
         for (const [index, file] of mediaFiles.entries()) uploadedMedia.push(await uploadPropertyMedia(file, { code: form.get('code'), name: form.get('name') }, 'NGUYEN-CAN', existingMedia.length + index + 1));
         const media = [...existingMedia, ...uploadedMedia];
-        const nextBuilding = { ...building, name: form.get('name').trim(), code: form.get('code').trim(), listingType: form.get('listingType'), floors: parseFloors(form.get('floors')), address: form.get('address').trim(), active: form.get('active') === 'on', media, image: media.find((item) => item.kind === 'image')?.url || building.image || '', services, settings: { ...settings, city: form.get('city'), ward: form.get('ward').trim(), area: form.get('area').trim(), debtAccount: form.get('debtAccount'), paymentDay: Number(form.get('paymentDay') || 5), bankName: form.get('bankName').trim(), bankBin: form.get('bankBin').trim(), bankNumber: form.get('bankNumber').trim(), bankHolder: form.get('bankHolder').trim(), electricityRate: parseMoney(form.get('electricityRate')), waterRate: parseMoney(form.get('waterRate')), managementFee: parseMoney(form.get('managementFee')) }, apartments: building.apartments || Array.from({ length: apartmentTotal }, (_, index) => ({ name: `Căn ${index + 1}`, beds: 0, status: 'empty' })) };
+        const nextBuilding = { ...building, name: form.get('name').trim(), code: form.get('code').trim(), listingType: form.get('listingType'), floors: parseFloors(form.get('floors')), address: form.get('address').trim(), active: form.get('active') === 'on', media, image: media.find((item) => item.kind === 'image')?.url || building.image || '', services, settings: { ...settings, city: form.get('city'), ward: form.get('ward').trim(), area: form.get('area').trim(), debtAccount: form.get('debtAccount'), paymentDay: Number(form.get('paymentDay') || 5), bankName: form.get('bankName').trim(), bankBin: form.get('bankBin').trim(), bankNumber: form.get('bankNumber').trim(), bankHolder: form.get('bankHolder').trim(), electricityRate: parseMoney(form.get('electricityRate')), waterRate: parseMoney(form.get('waterRate')) }, apartments: building.apartments || Array.from({ length: apartmentTotal }, (_, index) => ({ name: `Căn ${index + 1}`, beds: 0, status: 'empty' })) };
       delete nextBuilding.settings.contractTemplate;
       nextBuilding.settings.debtAccount = debtAccount;
       nextBuilding.settings.paymentDay = paymentDay;
@@ -2829,5 +2828,5 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-document.documentElement.dataset.appVersion = '66';
+document.documentElement.dataset.appVersion = '67';
 
