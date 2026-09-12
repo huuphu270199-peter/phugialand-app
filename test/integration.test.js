@@ -73,6 +73,7 @@ function startServer() {
       DB_PASSWORD: '',
       NVP_DATA_DIRECTORY: dataDirectory,
       NVP_DISABLE_SCHEDULED_JOBS: 'true',
+      NVP_BANK_DIRECTORY_URL: '',
       NVP_ADMIN_EMAIL: owner.email,
       NVP_ADMIN_PASSWORD: bootstrapOwnerPassword,
       NVP_ADMIN_PASSWORD_CHANGE_REQUIRED: 'true',
@@ -107,6 +108,9 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     assert.equal(health.response.status, 200);
     assert.equal(health.payload.ok, true);
     assert.equal((await request('/api/state')).response.status, 401);
+    const directory = await request('/api/banks');
+    assert.equal(directory.response.status, 200);
+    assert.ok(directory.payload.banks.some((bank) => bank.bin === '970433' && bank.shortName === 'VietBank'));
   });
 
   test('owner authentication requires and completes first-login password change', async () => {
@@ -145,7 +149,7 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
   test('owner can seed isolated operational state and unknown keys are discarded', async () => {
     const buildings = [{
       name: 'Tòa Kiểm Thử', code: 'TEST', address: '12 Đường Thử Nghiệm', active: true,
-      settings: { paymentDay: 5, managementFee: 100000, waterBillingMode: 'fixed', waterFixedAmount: 120000 },
+      settings: { paymentDay: 5, managementFee: 100000, waterBillingMode: 'fixed', waterFixedAmount: 120000, waterFloorRates: { 1: 125000 } },
       apartments: [
         { name: 'P101', floor: 1, status: 'rented', rentAmount: 5000000, serviceFee: 150000, waterBillingMode: 'fixed', waterFixedAmount: 130000 },
         { name: 'H201', floor: 2, status: 'empty', propertyType: 'homestay', bookedDates: ['2026-09-15'] }
@@ -159,12 +163,14 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     const result = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: {
       'nvp-buildings': JSON.stringify(buildings), 'nvp-customers': JSON.stringify(customers), 'nvp-meter-logs': JSON.stringify(meterLogs),
       'nvp-invoices': '[]', 'nvp-notifications': '[]', 'nvp-cashflow': '[]', 'nvp-users': '[]', 'nvp-feedback': '[]',
+      'nvp-invoice-settings': JSON.stringify({ companyName: 'Phú Gia Land', companyPhone: '0981444413', invoiceLogoUrl: 'assets/Logo BPG.jpg' }),
       'nvp-catalogs': JSON.stringify({ profit: [{ name: 'private' }], public: [{ name: 'shared' }] }), 'not-allowed': 'discard me'
     } } });
     assert.equal(result.response.status, 200);
     const state = await readState();
     assert.equal(state['not-allowed'], undefined);
     assert.equal(JSON.parse(state['nvp-buildings'])[0].address, '12 Đường Thử Nghiệm');
+    assert.equal(JSON.parse(state['nvp-invoice-settings']).companyName, 'Phú Gia Land');
   });
 
   test('owner creates staff and tenant accounts with customer linkage', async () => {
@@ -210,6 +216,22 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     assert.equal(invoices[0].dueDate, '2026-09-05');
     const second = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2026-08' } });
     assert.equal(second.payload.created, 0);
+  });
+
+  test('apartment zero-value overrides take precedence over floor and building defaults', async () => {
+    const state = await readState();
+    const buildings = JSON.parse(state['nvp-buildings']);
+    buildings[0].apartments[0].waterFixedAmount = 0;
+    buildings[0].apartments[0].serviceFee = 0;
+    const updated = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-buildings': JSON.stringify(buildings) } } });
+    assert.equal(updated.response.status, 200);
+    const result = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2026-09' } });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.created, 1);
+    const invoices = JSON.parse((await readState())['nvp-invoices']);
+    const invoice = invoices.find((item) => item.month === '2026-09');
+    assert.deepEqual(invoice.billingLines, { rent: 5000000, electricity: 0, water: 0, service: 0, serviceLabel: 'Phí dịch vụ' });
+    assert.equal(invoice.amount, 5000000);
   });
 
   test('pending invoices are hidden from tenant portal', async () => {

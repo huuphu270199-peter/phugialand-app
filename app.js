@@ -32,13 +32,15 @@ const depositLedgerStorageKey = 'nvp-deposit-ledger';
 const notificationStorageKey = 'nvp-notifications';
 const userStorageKey = 'nvp-users';
 const feedbackStorageKey = 'nvp-feedback';
+const invoiceSettingsStorageKey = 'nvp-invoice-settings';
 const hydrationReloadKey = 'nvp-hydration-reload-pending';
 const apiBaseUrl = '/api';
-const stateKeys = [storageKey, leadStorageKey, reservationStorageKey, taskStorageKey, invoiceStorageKey, cashflowStorageKey, catalogStorageKey, customerStorageKey, bookingStorageKey, locationStorageKey, meterLogStorageKey, commissionStorageKey, prepaymentStorageKey, depositLedgerStorageKey, notificationStorageKey, userStorageKey, feedbackStorageKey];
+const stateKeys = [storageKey, leadStorageKey, reservationStorageKey, taskStorageKey, invoiceStorageKey, cashflowStorageKey, catalogStorageKey, customerStorageKey, bookingStorageKey, locationStorageKey, meterLogStorageKey, commissionStorageKey, prepaymentStorageKey, depositLedgerStorageKey, notificationStorageKey, userStorageKey, feedbackStorageKey, invoiceSettingsStorageKey];
 localStorage.removeItem('nvp-contracts');
 const pendingSyncKeys = new Set();
 let syncTimeout;
 let administrativeUnitsPromise;
+let bankDirectoryPromise;
 let passwordChangeRequired = false;
 let modalCloseAction = null;
 let customerManagerStatus = 'renting';
@@ -107,6 +109,44 @@ async function setupAdministrativeFields(form, selectedCity, selectedWard) {
   }
 }
 
+async function getBankDirectory() {
+  bankDirectoryPromise ||= fetch('/api/banks').then(async (response) => {
+    if (!response.ok) throw new Error('Bank directory unavailable');
+    const payload = await response.json();
+    return Array.isArray(payload.banks) ? payload.banks : [];
+  });
+  return bankDirectoryPromise;
+}
+
+async function setupBankFields(form, selectedName, selectedBin) {
+  const bankNameInput = form.elements.namedItem('bankName');
+  const bankBinInput = form.elements.namedItem('bankBin');
+  if (!bankNameInput || !bankBinInput) return;
+  const bankSelect = document.createElement('select');
+  bankSelect.name = 'bankName';
+  bankSelect.innerHTML = selectedName ? `<option value="${escapeHtml(selectedName)}" data-bin="${escapeHtml(selectedBin)}">${escapeHtml(selectedName)}</option>` : '<option value="">Đang tải danh sách ngân hàng...</option>';
+  bankNameInput.replaceWith(bankSelect);
+  bankBinInput.readOnly = true;
+  bankBinInput.placeholder = 'Tự động theo ngân hàng';
+  const applySelectedBank = () => {
+    const option = bankSelect.selectedOptions[0];
+    bankBinInput.value = option?.dataset.bin || '';
+  };
+  bankSelect.addEventListener('change', applySelectedBank);
+  try {
+    const banks = await getBankDirectory();
+    const selectedBank = banks.find((bank) => bank.bin === selectedBin || bank.shortName.toLowerCase() === String(selectedName || '').toLowerCase());
+    const legacyOption = selectedName && !selectedBank ? `<option value="${escapeHtml(selectedName)}" data-bin="${escapeHtml(selectedBin)}">${escapeHtml(selectedName)} (đã lưu)</option>` : '';
+    bankSelect.innerHTML = `<option value="">Chọn ngân hàng</option>${legacyOption}${banks.map((bank) => `<option value="${escapeHtml(bank.shortName)}" data-bin="${escapeHtml(bank.bin)}">${escapeHtml(bank.shortName)} - ${escapeHtml(bank.name)}</option>`).join('')}`;
+    bankSelect.value = selectedBank?.shortName || selectedName || '';
+    applySelectedBank();
+  } catch (error) {
+    bankSelect.innerHTML = `${selectedName ? `<option value="${escapeHtml(selectedName)}" data-bin="${escapeHtml(selectedBin)}">${escapeHtml(selectedName)} (đã lưu)</option>` : ''}<option value="" ${selectedName ? '' : 'selected'}>Không thể tải danh sách ngân hàng</option>`;
+    bankSelect.value = selectedName || '';
+    applySelectedBank();
+  }
+}
+
 const buildings = readStorage(storageKey, []).map((building) => ({
   ...building,
   apartments: Array.isArray(building.apartments)
@@ -131,6 +171,7 @@ const depositLedger = readStorage(depositLedgerStorageKey, []);
 const notifications = readStorage(notificationStorageKey, []);
 const users = readStorage(userStorageKey, []);
 const feedback = readStorage(feedbackStorageKey, []);
+let invoiceSettings = readStorage(invoiceSettingsStorageKey, {});
 
 async function sendPushNotification(payload) {
   try { await fetch('/api/push-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } catch (error) { console.warn('Push notification failed:', error); }
@@ -373,6 +414,76 @@ function parseFloors(value) {
   return normalizeFloors(String(value || '').split(','));
 }
 
+function parseFloorRateOverrides(value, fieldLabel) {
+  const entries = String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const rates = {};
+  for (const entry of entries) {
+    const separator = entry.indexOf(':');
+    const floor = separator >= 0 ? entry.slice(0, separator).trim() : '';
+    const amountText = separator >= 0 ? entry.slice(separator + 1).trim() : '';
+    const amount = parseMoney(amountText);
+    if (!floor || !amountText || amount <= 0) throw new Error(`${fieldLabel}: dùng định dạng Tầng:Số tiền, ví dụ B1:3.500, 2:4.000`);
+    if (Object.prototype.hasOwnProperty.call(rates, floor)) throw new Error(`${fieldLabel}: tầng ${floor} bị lặp`);
+    rates[floor] = amount;
+  }
+  return rates;
+}
+
+function setupBillingSettingsForm(form) {
+  const field = (name) => form.elements.namedItem(name);
+  const label = (name) => field(name)?.closest('label');
+  const grid = field('debtAccount')?.closest('.form-grid');
+  if (!grid) return;
+  const groups = [
+    ['Thu tiền', 'Phương thức nhận tiền và hạn thanh toán của hóa đơn hằng tháng.', ['debtAccount', 'paymentDay']],
+    ['Tài khoản nhận tiền', 'Chọn ngân hàng và nhập số tài khoản để tạo VietQR trên hóa đơn đã duyệt.', ['bankName', 'bankNumber', 'bankHolder']],
+    ['Điện, nước và phí định kỳ', 'Mức tại căn hộ được ưu tiên, sau đó đến mức theo tầng, cuối cùng là mức mặc định của tòa nhà.', ['electricityRate', 'electricityFloorRates', 'waterBillingMode', 'waterRate', 'waterFixedAmount', 'waterFloorRates', 'managementFee']]
+  ];
+  groups.forEach(([title, description, names]) => {
+    const heading = document.createElement('div');
+    heading.className = 'settings-group-heading full-field';
+    heading.innerHTML = `<strong>${title}</strong><small>${description}</small>`;
+    grid.append(heading);
+    names.forEach((name) => { const element = label(name); if (element) grid.append(element); });
+  });
+  const help = {
+    debtAccount: 'Chuyển khoản sẽ yêu cầu đủ thông tin ngân hàng và cho phép tạo VietQR.',
+    paymentDay: 'Từ ngày 1 đến 31; tháng ngắn hơn sẽ tự dùng ngày cuối tháng.',
+    bankName: 'Chọn ngân hàng nhận tiền; hệ thống tự điền BIN tương ứng.',
+    bankNumber: 'Chỉ nhập số tài khoản nhận tiền. Không nhập số thẻ, PIN hoặc OTP.',
+    bankHolder: 'Không bắt buộc để tạo QR, nhưng nên nhập để người trả tiền đối chiếu.',
+    electricityRate: 'Mức mặc định khi căn hộ và tầng chưa có giá riêng.',
+    electricityFloorRates: 'Không bắt buộc. Ví dụ: 1:3.500, 2:4.000, B1:3.200.',
+    waterBillingMode: 'Theo m³ dùng nhật ký đồng hồ; mức cố định thu đều mỗi tháng.',
+    waterRate: 'Mức mặc định khi tính nước theo chỉ số đồng hồ.',
+    waterFixedAmount: 'Mức mặc định khi căn hộ và tầng chưa có mức riêng.',
+    waterFloorRates: 'Không bắt buộc. Ví dụ: 1:150.000, 2:180.000.',
+    managementFee: 'Mức mặc định; phí riêng tại căn hộ sẽ được ưu tiên.'
+  };
+  Object.entries(help).forEach(([name, text]) => label(name)?.insertAdjacentHTML('beforeend', `<small class="form-hint">${text}</small>`));
+  label('debtAccount').firstChild.textContent = 'Phương thức thu tiền';
+  field('debtAccount').options[0].textContent = 'Chưa thiết lập';
+  field('debtAccount').options[1].textContent = 'Chuyển khoản ngân hàng (VietQR)';
+  field('debtAccount').options[2].textContent = 'Tiền mặt';
+  label('paymentDay').firstChild.textContent = 'Hạn thanh toán hằng tháng';
+  label('waterRate').firstChild.textContent = 'Đơn giá nước mặc định (đ/m³)';
+  label('waterFixedAmount').firstChild.textContent = 'Mức nước cố định mặc định (đ/tháng)';
+  label('bankName').classList.add('full-field', 'bank-name-field');
+  label('bankBin').hidden = true;
+  const bankFields = ['bankName', 'bankNumber', 'bankHolder'];
+  const requiredBankFields = new Set(['bankName', 'bankNumber']);
+  const updateVisibility = () => {
+    const usesBank = field('debtAccount').value === 'bank';
+    bankFields.forEach((name) => { label(name).hidden = !usesBank; field(name).required = usesBank && requiredBankFields.has(name); });
+    const fixedWater = field('waterBillingMode').value === 'fixed';
+    ['waterFixedAmount', 'waterFloorRates'].forEach((name) => { label(name).hidden = !fixedWater; });
+    label('waterRate').hidden = fixedWater;
+  };
+  field('debtAccount').addEventListener('change', updateVisibility);
+  field('waterBillingMode').addEventListener('change', updateVisibility);
+  updateVisibility();
+}
+
 function openBuildingForm(buildingToEdit = null) {
   const editIndex = buildingToEdit ? buildings.indexOf(buildingToEdit) : -1;
   const building = buildingToEdit || { services: [], settings: {}, apartments: [] };
@@ -382,22 +493,29 @@ function openBuildingForm(buildingToEdit = null) {
     ? services.map((service, index) => `<div class="service-item"><div><strong>${escapeHtml(service.name)}</strong><small>${escapeHtml(service.feeType)} · ${escapeHtml(service.unitType)}</small></div><button type="button" data-service-delete="${index}" aria-label="Xóa dịch vụ">×</button></div>`).join('')
     : '<p class="empty-state">Chưa có dịch vụ nào</p>';
     openModal('Tòa nhà', `<form class="building-form building-form-wide" data-building-form>
-    <section class="form-section"><div class="form-section-title"><strong>Thông tin cơ bản</strong><label class="inline-toggle">Hoạt động<input name="active" type="checkbox" ${building.active !== false ? 'checked' : ''}><span></span></label></div><div class="form-grid"><label>Tên tòa nhà <b>*</b><input name="name" required maxlength="80" value="${escapeHtml(building.name || '')}" placeholder="Ví dụ: Vạn Phúc Garden"></label><label>Tên viết tắt/Mã tòa <input name="code" maxlength="30" value="${escapeHtml(building.code || '')}" placeholder="Nhập mã viết tắt"></label><label>Loại hình khai thác<select name="listingType"><option value="mixed" ${!building.listingType || building.listingType === 'mixed' ? 'selected' : ''}>Nhiều loại hình trong tòa</option><option value="whole-building" ${building.listingType === 'whole-building' ? 'selected' : ''}>Tòa nhà nguyên căn</option></select></label></div></section>
+    <section class="form-section"><div class="form-section-title"><strong>Thông tin cơ bản</strong><label class="inline-toggle">Hoạt động<input name="active" type="checkbox" ${building.active !== false ? 'checked' : ''}><span></span></label></div><div class="form-grid"><label><span class="field-label">Tên tòa nhà <b>*</b></span><input name="name" required maxlength="80" value="${escapeHtml(building.name || '')}" placeholder="Ví dụ: Vạn Phúc Garden"></label><label>Tên viết tắt/Mã tòa <input name="code" maxlength="30" value="${escapeHtml(building.code || '')}" placeholder="Nhập mã viết tắt"></label><label>Loại hình khai thác<select name="listingType"><option value="mixed" ${!building.listingType || building.listingType === 'mixed' ? 'selected' : ''}>Nhiều loại hình trong tòa</option><option value="whole-building" ${building.listingType === 'whole-building' ? 'selected' : ''}>Tòa nhà nguyên căn</option></select></label></div></section>
     <section class="form-section"><div class="form-section-title"><strong>Thông tin địa chỉ</strong></div><div class="form-grid"><label>Tỉnh/Thành phố <b>*</b><select name="city" data-location-city required><option value="">Đang tải tỉnh/thành phố...</option></select></label><label>Xã/Phường <b>*</b><select name="ward" data-location-ward required disabled><option value="">Chọn tỉnh/thành phố trước</option></select></label><label>Khu vực <input name="area" value="${escapeHtml(settings.area || '')}" placeholder="Ví dụ: KĐT Vạn Phúc"></label><label>Địa chỉ chi tiết <b>*</b><input name="address" required value="${escapeHtml(building.address || '')}" placeholder="Số nhà, đường, khu vực"></label></div></section>
+    <section class="form-section"><div class="form-section-title"><strong>Thông tin quản lý</strong></div><div class="form-grid"><label>Họ tên người quản lý<input name="managerName" maxlength="100" value="${escapeHtml(settings.managerName || '')}" placeholder="Ví dụ: Nguyễn Văn An"></label><label>Số điện thoại quản lý<input name="companyPhone" type="tel" maxlength="30" value="${escapeHtml(settings.companyPhone || '')}" placeholder="Ví dụ: 0981 444 413"></label></div></section>
     <section class="form-section"><div class="form-section-title"><strong>Ảnh/video tòa nhà</strong></div><label>Media nguyên căn<input name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" multiple><small class="form-hint">Dùng cho trường hợp cho thuê nguyên căn. Tối đa 5 ảnh và 1 video.</small></label></section>
     <section class="form-section"><div class="form-section-title"><strong>Dịch vụ tòa nhà</strong></div><div class="service-list">${serviceItems}</div><button class="service-add-button" type="button" data-service-add>＋ Thêm dịch vụ</button></section>
-    <section class="form-section"><div class="form-section-title"><strong>Cấu hình thanh toán &amp; dịch vụ</strong></div><div class="form-grid"><label>Tài khoản gạch nợ tự động<select name="debtAccount"><option value="">Chọn</option><option ${settings.debtAccount === 'bank' ? 'selected' : ''} value="bank">Tài khoản ngân hàng</option><option ${settings.debtAccount === 'cash' ? 'selected' : ''} value="cash">Tài khoản tiền mặt</option></select></label><label>Ngày thanh toán hằng tháng<input name="paymentDay" type="number" min="1" max="31" value="${Number(settings.paymentDay || 5)}"></label><label>Ngân hàng nhận tiền<input name="bankName" maxlength="80" value="${escapeHtml(settings.bankName || '')}" placeholder="Ví dụ: MB Bank"></label><label>Mã BIN ngân hàng<input name="bankBin" inputmode="numeric" maxlength="12" value="${escapeHtml(settings.bankBin || '')}" placeholder="Ví dụ: 970422"></label><label>Số tài khoản<input name="bankNumber" inputmode="numeric" maxlength="30" value="${escapeHtml(settings.bankNumber || '')}" placeholder="Nhập số tài khoản"></label><label>Tên chủ tài khoản<input name="bankHolder" maxlength="100" value="${escapeHtml(settings.bankHolder || '')}" placeholder="Tên chủ tài khoản"></label><label>Đơn giá điện (đ/kWh)<input name="electricityRate" type="number" min="0" value="${Number(settings.electricityRate || 0)}"></label><label>Đơn giá nước (đ/khối)<input name="waterRate" type="number" min="0" value="${Number(settings.waterRate || 0)}"></label><label>Phí quản lý (đ/tháng)<input name="managementFee" type="number" min="0" value="${Number(settings.managementFee || 0)}"></label><label>Cấu hình hóa đơn điện tử<select name="eInvoice"><option value="default" ${settings.eInvoice !== 'disabled' ? 'selected' : ''}>Dùng cấu hình mặc định</option><option value="disabled" ${settings.eInvoice === 'disabled' ? 'selected' : ''}>Không sử dụng</option></select></label><label>Mẫu in hóa đơn<select name="invoiceTemplate"><option value="">Chọn</option><option value="default" ${settings.invoiceTemplate === 'default' ? 'selected' : ''}>Mẫu mặc định</option></select></label></div></section>
+    <section class="form-section"><div class="form-section-title"><strong>Cấu hình thanh toán &amp; dịch vụ</strong></div><div class="form-grid"><label>Tài khoản gạch nợ tự động<select name="debtAccount"><option value="">Chọn</option><option ${settings.debtAccount === 'bank' ? 'selected' : ''} value="bank">Tài khoản ngân hàng</option><option ${settings.debtAccount === 'cash' ? 'selected' : ''} value="cash">Tài khoản tiền mặt</option></select></label><label>Ngày thanh toán hằng tháng<input name="paymentDay" type="number" min="1" max="31" value="${Number(settings.paymentDay || 5)}"></label><label>Ngân hàng nhận tiền<input name="bankName" maxlength="80" value="${escapeHtml(settings.bankName || '')}" placeholder="Ví dụ: MB Bank"></label><label>Mã BIN ngân hàng<input name="bankBin" inputmode="numeric" maxlength="12" value="${escapeHtml(settings.bankBin || '')}" placeholder="Ví dụ: 970422"></label><label>Số tài khoản<input name="bankNumber" inputmode="numeric" maxlength="30" value="${escapeHtml(settings.bankNumber || '')}" placeholder="Nhập số tài khoản"></label><label>Tên chủ tài khoản<input name="bankHolder" maxlength="100" value="${escapeHtml(settings.bankHolder || '')}" placeholder="Tên chủ tài khoản"></label><label>Đơn giá điện (đ/kWh)<input name="electricityRate" type="number" min="0" value="${Number(settings.electricityRate || 0)}"></label><label>Đơn giá nước (đ/khối)<input name="waterRate" type="number" min="0" value="${Number(settings.waterRate || 0)}"></label><label>Phí quản lý (đ/tháng)<input name="managementFee" type="number" min="0" value="${Number(settings.managementFee || 0)}"></label></div></section>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">Lưu</button></div>
   </form>`, () => {
     document.querySelector('[data-modal]').classList.add('building-form-modal');
     const buildingForm = document.querySelector('[data-building-form]');
     const waterRateField = buildingForm.querySelector('[name="waterRate"]');
-    const paymentDayField = buildingForm.querySelector('[name="paymentDay"]');
-    buildingForm.querySelector('[name="listingType"]')?.closest('label').insertAdjacentHTML('afterend', `<label>Số tầng hoặc danh sách tầng<input name="floors" maxlength="300" value="${escapeHtml(getBuildingFloors(building).join(', '))}" placeholder="Ví dụ: 4 hoặc B1, 1, 2, 3, 4"><small class="form-hint">Nhập 4 để tạo tầng 1 đến tầng 4; nhập danh sách khi có tầng hầm hoặc tầng đặc biệt.</small></label>`);
-    paymentDayField?.closest('label').insertAdjacentHTML('afterend', `<label>Tên đơn vị trên hóa đơn<input name="companyName" maxlength="120" value="${escapeHtml(settings.companyName || 'Phú Gia Land')}" placeholder="Ví dụ: Công ty TNHH Phú Gia Land"></label><label>Số điện thoại trên hóa đơn<input name="companyPhone" maxlength="30" value="${escapeHtml(settings.companyPhone || '')}" placeholder="Ví dụ: 0981 444 413"></label><label>Logo hóa đơn (URL)<input name="invoiceLogoUrl" maxlength="500" value="${escapeHtml(settings.invoiceLogoUrl || 'assets/Logo BPG.jpg')}" placeholder="assets/Logo BPG.jpg"></label>`);
+    const listingTypeField = buildingForm.querySelector('[name="listingType"]');
+    listingTypeField?.closest('label').insertAdjacentHTML('afterend', `<label>Số tầng hoặc danh sách tầng<input name="floors" maxlength="300" value="${escapeHtml(getBuildingFloors(building).join(', '))}" placeholder="Ví dụ: 4 hoặc B1, 1, 2, 3, 4"><small class="form-hint">Nhập 4 để tạo tầng 1 đến tầng 4; nhập danh sách khi có tầng hầm hoặc tầng đặc biệt.</small></label>`);
+    const basicInfoGrid = listingTypeField?.closest('.form-grid');
+    basicInfoGrid?.classList.add('basic-info-grid');
+    buildingForm.querySelector('[name="name"]')?.closest('label').classList.add('basic-info-wide');
+    buildingForm.querySelector('[name="floors"]')?.closest('label').classList.add('basic-info-wide');
+    listingTypeField?.closest('label').insertAdjacentHTML('beforeend', '<small class="form-hint">Chọn nguyên căn khi toàn bộ tòa nhà được cho thuê như một sản phẩm.</small>');
     if (waterRateField) {
       waterRateField.closest('label').insertAdjacentHTML('afterend', `<label>Chế độ tiền nước<select name="waterBillingMode"><option value="metered" ${settings.waterBillingMode !== 'fixed' ? 'selected' : ''}>Theo m³</option><option value="fixed" ${settings.waterBillingMode === 'fixed' ? 'selected' : ''}>Mức cố định</option></select></label><label>Mức cố định mặc định (đ/tháng)<input name="waterFixedAmount" type="number" min="0" value="${Number(settings.waterFixedAmount || 0)}"></label><label>Mức nước theo tầng<input name="waterFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.waterFloorRates || {}).map(([floor, amount]) => `${floor}:${Number(amount).toLocaleString('vi-VN')}`).join(', '))}" placeholder="Ví dụ: 1:150.000, 2:180.000"></label><label>Giá điện theo tầng (đ/kWh)<input name="electricityFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.electricityFloorRates || {}).map(([floor, amount]) => `${floor}:${Number(amount).toLocaleString('vi-VN')}`).join(', '))}" placeholder="Ví dụ: 1:3.500, 2:4.000"></label>`);
     }
+    setupBankFields(buildingForm, settings.bankName || '', settings.bankBin || '');
+    setupBillingSettingsForm(buildingForm);
     setupAdministrativeFields(buildingForm, settings.city || '', settings.ward || '');
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
     document.querySelector('[data-service-add]').addEventListener('click', () => openServiceForm(building));
@@ -409,10 +527,26 @@ function openBuildingForm(buildingToEdit = null) {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       const apartmentTotal = Number(form.get('apartments') || 0);
-      const waterFloorRates = Object.fromEntries(String(form.get('waterFloorRates') || '').split(',').map((item) => item.trim().split(':')).map(([floor, amount]) => amount === undefined ? [NaN, NaN] : [Number(floor), parseMoney(amount)]).filter(([floor, amount]) => Number.isFinite(floor) && floor >= 0 && Number.isFinite(amount) && amount >= 0));
-      const electricityFloorRates = Object.fromEntries(String(form.get('electricityFloorRates') || '').split(',').map((item) => item.trim().split(':')).map(([floor, amount]) => amount === undefined ? [NaN, NaN] : [Number(floor), parseMoney(amount)]).filter(([floor, amount]) => Number.isFinite(floor) && floor >= 0 && Number.isFinite(amount) && amount >= 0));
       const waterBillingMode = form.get('waterBillingMode') === 'fixed' ? 'fixed' : 'metered';
       const waterFixedAmount = parseMoney(form.get('waterFixedAmount'));
+      const debtAccount = ['bank', 'cash'].includes(form.get('debtAccount')) ? form.get('debtAccount') : '';
+      const paymentDay = Number(form.get('paymentDay'));
+      const bankName = String(form.get('bankName') || '').trim();
+      const bankBin = String(form.get('bankBin') || '').replace(/\s/g, '');
+      const bankNumber = String(form.get('bankNumber') || '').replace(/\s/g, '');
+      const bankHolder = String(form.get('bankHolder') || '').trim().toUpperCase();
+      if (!Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 31) { showToast('Hạn thanh toán phải là ngày từ 1 đến 31'); return; }
+      if (debtAccount === 'bank' && !/^\d{6}$/.test(bankBin)) { showToast('Mã BIN ngân hàng phải gồm đúng 6 chữ số'); return; }
+      if (debtAccount === 'bank' && !/^\d{6,30}$/.test(bankNumber)) { showToast('Số tài khoản phải gồm từ 6 đến 30 chữ số'); return; }
+      let waterFloorRates;
+      let electricityFloorRates;
+      try {
+        waterFloorRates = waterBillingMode === 'fixed' ? parseFloorRateOverrides(form.get('waterFloorRates'), 'Mức nước theo tầng') : {};
+        electricityFloorRates = parseFloorRateOverrides(form.get('electricityFloorRates'), 'Giá điện theo tầng');
+      } catch (error) {
+        showToast(error.message);
+        return;
+      }
       const mediaFiles = Array.from(form.getAll('media')).filter((file) => file?.size);
       const existingMedia = Array.isArray(building.media) ? building.media : [];
       const imageCount = existingMedia.filter((item) => item.kind === 'image').length + mediaFiles.filter((file) => file.type.startsWith('image/')).length;
@@ -423,15 +557,21 @@ function openBuildingForm(buildingToEdit = null) {
         const uploadedMedia = [];
         for (const [index, file] of mediaFiles.entries()) uploadedMedia.push(await uploadPropertyMedia(file, { code: form.get('code'), name: form.get('name') }, 'NGUYEN-CAN', existingMedia.length + index + 1));
         const media = [...existingMedia, ...uploadedMedia];
-        const nextBuilding = { ...building, name: form.get('name').trim(), code: form.get('code').trim(), listingType: form.get('listingType'), floors: parseFloors(form.get('floors')), address: form.get('address').trim(), active: form.get('active') === 'on', media, image: media.find((item) => item.kind === 'image')?.url || building.image || '', services, settings: { ...settings, city: form.get('city'), ward: form.get('ward').trim(), area: form.get('area').trim(), debtAccount: form.get('debtAccount'), paymentDay: Number(form.get('paymentDay') || 5), bankName: form.get('bankName').trim(), bankBin: form.get('bankBin').trim(), bankNumber: form.get('bankNumber').trim(), bankHolder: form.get('bankHolder').trim(), electricityRate: parseMoney(form.get('electricityRate')), waterRate: parseMoney(form.get('waterRate')), managementFee: parseMoney(form.get('managementFee')), eInvoice: form.get('eInvoice'), invoiceTemplate: form.get('invoiceTemplate') }, apartments: building.apartments || Array.from({ length: apartmentTotal }, (_, index) => ({ name: `Căn ${index + 1}`, beds: 0, status: 'empty' })) };
+        const nextBuilding = { ...building, name: form.get('name').trim(), code: form.get('code').trim(), listingType: form.get('listingType'), floors: parseFloors(form.get('floors')), address: form.get('address').trim(), active: form.get('active') === 'on', media, image: media.find((item) => item.kind === 'image')?.url || building.image || '', services, settings: { ...settings, city: form.get('city'), ward: form.get('ward').trim(), area: form.get('area').trim(), debtAccount: form.get('debtAccount'), paymentDay: Number(form.get('paymentDay') || 5), bankName: form.get('bankName').trim(), bankBin: form.get('bankBin').trim(), bankNumber: form.get('bankNumber').trim(), bankHolder: form.get('bankHolder').trim(), electricityRate: parseMoney(form.get('electricityRate')), waterRate: parseMoney(form.get('waterRate')), managementFee: parseMoney(form.get('managementFee')) }, apartments: building.apartments || Array.from({ length: apartmentTotal }, (_, index) => ({ name: `Căn ${index + 1}`, beds: 0, status: 'empty' })) };
       delete nextBuilding.settings.contractTemplate;
+      nextBuilding.settings.debtAccount = debtAccount;
+      nextBuilding.settings.paymentDay = paymentDay;
+      nextBuilding.settings.bankName = debtAccount === 'bank' ? bankName : '';
+      nextBuilding.settings.bankBin = debtAccount === 'bank' ? bankBin : '';
+      nextBuilding.settings.bankNumber = debtAccount === 'bank' ? bankNumber : '';
+      nextBuilding.settings.bankHolder = debtAccount === 'bank' ? bankHolder : '';
       nextBuilding.settings.waterBillingMode = waterBillingMode;
       nextBuilding.settings.waterFixedAmount = waterFixedAmount;
+      nextBuilding.settings.waterRate = waterBillingMode === 'metered' ? parseMoney(form.get('waterRate')) : 0;
       nextBuilding.settings.waterFloorRates = waterFloorRates;
       nextBuilding.settings.electricityFloorRates = electricityFloorRates;
-      nextBuilding.settings.companyName = String(form.get('companyName') || '').trim();
+      nextBuilding.settings.managerName = String(form.get('managerName') || '').trim();
       nextBuilding.settings.companyPhone = String(form.get('companyPhone') || '').trim();
-      nextBuilding.settings.invoiceLogoUrl = String(form.get('invoiceLogoUrl') || '').trim();
       if (editIndex >= 0) buildings[editIndex] = nextBuilding;
       else buildings.push(nextBuilding);
       selectBuilding(buildings.indexOf(nextBuilding));
@@ -1554,20 +1694,34 @@ function openInvoiceForm() {
 function openInvoicePayment(invoice) {
   const building = buildings.find((item) => item.name === invoice.building) || buildings[selectedBuildingIndex];
   const settings = building?.settings || {};
-  if (!settings.bankBin || !settings.bankNumber || !settings.bankHolder) {
-    showToast('Cần cấu hình BIN, số tài khoản và chủ tài khoản cho tòa nhà');
+  if (settings.debtAccount !== 'bank') {
+    showToast('Tòa nhà chưa chọn phương thức chuyển khoản ngân hàng');
+    return;
+  }
+  if (!settings.bankBin || !settings.bankNumber) {
+    showToast('Cần chọn ngân hàng và nhập số tài khoản cho tòa nhà');
     return;
   }
   const paymentCode = invoice.paymentCode || `NVP-${String(invoice.createdAt || '').slice(0, 10).replaceAll('-', '')}`;
-  const query = new URLSearchParams({ amount: String(invoice.amount), addInfo: paymentCode, accountName: settings.bankHolder });
+  const query = new URLSearchParams({ amount: String(invoice.amount), addInfo: paymentCode });
+  if (settings.bankHolder) query.set('accountName', settings.bankHolder);
   const imageUrl = `https://img.vietqr.io/image/${encodeURIComponent(settings.bankBin)}-${encodeURIComponent(settings.bankNumber)}-compact2.png?${query}`;
   openModal(`Thanh toán hóa đơn`, `<div class="payment-qr"><img src="${imageUrl}" alt="VietQR thanh toán ${escapeHtml(paymentCode)}"><div><p><strong>${escapeHtml(invoice.title)}</strong></p><p>Số tiền: <strong>${Number(invoice.amount).toLocaleString('vi-VN')} đ</strong></p><p>Nội dung bắt buộc: <strong>${escapeHtml(paymentCode)}</strong></p><p>${escapeHtml(settings.bankName)} · ${escapeHtml(settings.bankNumber)} · ${escapeHtml(settings.bankHolder)}</p></div></div>`);
+}
+
+function resolveInvoiceSettings(building = {}) {
+  const legacySettings = building.settings || {};
+  return {
+    companyName: invoiceSettings.companyName || legacySettings.companyName || 'Phú Gia Land',
+    invoiceLogoUrl: invoiceSettings.invoiceLogoUrl || legacySettings.invoiceLogoUrl || 'assets/Logo BPG.jpg'
+  };
 }
 
 function getInvoiceDetails(invoice) {
   const building = buildings.find((item) => item.name === invoice.building) || buildings[selectedBuildingIndex] || {};
   const settings = building.settings || {};
-  return { company: settings.companyName || 'Phú Gia Land', logo: settings.invoiceLogoUrl || 'assets/Logo BPG.jpg', phone: settings.companyPhone || '', address: [building.address, settings.area, settings.ward, settings.city].filter(Boolean).join(', '), bank: [settings.bankName, settings.bankNumber, settings.bankHolder].filter(Boolean).join(' · '), customer: invoice.tenantName || customers.find((item) => item.email === invoice.tenantEmail)?.name || invoice.tenantEmail || 'Chưa gán khách hàng' };
+  const sharedSettings = resolveInvoiceSettings(building);
+  return { company: sharedSettings.companyName, logo: sharedSettings.invoiceLogoUrl, manager: settings.managerName || '', phone: settings.companyPhone || '', address: [building.address, settings.area, settings.ward, settings.city].filter(Boolean).join(', '), bank: [settings.bankName, settings.bankNumber, settings.bankHolder].filter(Boolean).join(' · '), customer: invoice.tenantName || customers.find((item) => item.email === invoice.tenantEmail)?.name || invoice.tenantEmail || 'Chưa gán khách hàng' };
 }
 
 function getInvoiceLineItems(invoice) {
@@ -1667,7 +1821,7 @@ function printInvoice(invoice) {
   const detail = getInvoiceDetails(invoice);
   const lines = getInvoiceLineItems(invoice).map(([label, amount]) => `<tr><td>${escapeHtml(label)}</td><td>${Number(amount || 0).toLocaleString('vi-VN')} đ</td></tr>`).join('');
   const page = window.open('', '_blank', 'width=760,height=900');
-  page.document.write(`<title>Hóa đơn ${escapeHtml(invoice.paymentCode || '')}</title><style>body{font-family:Arial,sans-serif;color:#17231d;padding:38px;max-width:680px;margin:auto}header{border-bottom:3px solid #138b54;padding-bottom:16px;display:flex;gap:18px;align-items:center}header img{width:76px;height:76px;object-fit:contain}h1{margin:0;color:#0b6e40;font-size:26px}p{margin:6px 0;color:#516058}table{width:100%;border-collapse:collapse;margin-top:28px}td,th{border-bottom:1px solid #dce4de;padding:12px;text-align:left}td:last-child,th:last-child{text-align:right}.total{font-size:22px;font-weight:bold;color:#0b6e40;text-align:right;margin-top:20px}.code{background:#f2f7f3;padding:12px;margin-top:20px}</style><header><img src="${escapeHtml(detail.logo)}" alt=""><div><h1>${escapeHtml(detail.company)}</h1><p>${escapeHtml(detail.address)}</p><p>${escapeHtml(detail.phone)}</p></div></header><h2>HÓA ĐƠN THANH TOÁN</h2><p>Khách hàng: <b>${escapeHtml(detail.customer)}</b></p><p>Căn hộ: <b>${escapeHtml(invoice.apartment || '')}</b> · Tháng: <b>${escapeHtml(invoice.month || '')}</b></p><table><thead><tr><th>Nội dung</th><th>Thành tiền</th></tr></thead><tbody>${lines}</tbody></table><div class="total">Tổng thanh toán: ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ</div><div class="code">Mã thanh toán: <b>${escapeHtml(invoice.paymentCode || '')}</b><br>Hạn thanh toán: ${escapeHtml(invoice.dueDate || 'Chưa xác định')}<br>Ngân hàng: ${escapeHtml(detail.bank || 'Chưa cấu hình')}</div>`);
+  page.document.write(`<title>Hóa đơn ${escapeHtml(invoice.paymentCode || '')}</title><style>body{font-family:Arial,sans-serif;color:#17231d;padding:38px;max-width:680px;margin:auto}header{border-bottom:3px solid #138b54;padding-bottom:16px;display:flex;gap:18px;align-items:center}header img{width:76px;height:76px;object-fit:contain}h1{margin:0;color:#0b6e40;font-size:26px}p{margin:6px 0;color:#516058}table{width:100%;border-collapse:collapse;margin-top:28px}td,th{border-bottom:1px solid #dce4de;padding:12px;text-align:left}td:last-child,th:last-child{text-align:right}.total{font-size:22px;font-weight:bold;color:#0b6e40;text-align:right;margin-top:20px}.code{background:#f2f7f3;padding:12px;margin-top:20px}</style><header><img src="${escapeHtml(detail.logo)}" alt=""><div><h1>${escapeHtml(detail.company)}</h1><p>${escapeHtml(detail.address)}</p><p>${escapeHtml([detail.manager, detail.phone].filter(Boolean).join(' · '))}</p></div></header><h2>HÓA ĐƠN THANH TOÁN</h2><p>Khách hàng: <b>${escapeHtml(detail.customer)}</b></p><p>Căn hộ: <b>${escapeHtml(invoice.apartment || '')}</b> · Tháng: <b>${escapeHtml(invoice.month || '')}</b></p><table><thead><tr><th>Nội dung</th><th>Thành tiền</th></tr></thead><tbody>${lines}</tbody></table><div class="total">Tổng thanh toán: ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ</div><div class="code">Mã thanh toán: <b>${escapeHtml(invoice.paymentCode || '')}</b><br>Hạn thanh toán: ${escapeHtml(invoice.dueDate || 'Chưa xác định')}<br>Ngân hàng: ${escapeHtml(detail.bank || 'Chưa cấu hình')}</div>`);
   page.document.close();
   page.print();
 }
@@ -1687,7 +1841,7 @@ async function copyInvoiceImage(invoice) {
     } catch {}
   }
   context.fillStyle = '#0b6e40'; context.font = 'bold 42px Arial'; context.fillText(detail.company, textLeft, 80); context.fillStyle = '#34433a'; context.font = '25px Arial';
-  const lines = [detail.address, detail.phone, 'HÓA ĐƠN THANH TOÁN', `Khách hàng: ${detail.customer}`, `Căn hộ: ${invoice.apartment || ''}  |  Tháng: ${invoice.month || ''}`, ...getInvoiceLineItems(invoice).map(([label, amount]) => `${label}: ${Number(amount || 0).toLocaleString('vi-VN')} đ`), `TỔNG THANH TOÁN: ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ`, `Hạn thanh toán: ${invoice.dueDate || 'Chưa xác định'}`, `Mã thanh toán: ${invoice.paymentCode || ''}`, `Ngân hàng: ${detail.bank || 'Chưa cấu hình'}`];
+  const lines = [detail.address, [detail.manager, detail.phone].filter(Boolean).join(' · '), 'HÓA ĐƠN THANH TOÁN', `Khách hàng: ${detail.customer}`, `Căn hộ: ${invoice.apartment || ''}  |  Tháng: ${invoice.month || ''}`, ...getInvoiceLineItems(invoice).map(([label, amount]) => `${label}: ${Number(amount || 0).toLocaleString('vi-VN')} đ`), `TỔNG THANH TOÁN: ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ`, `Hạn thanh toán: ${invoice.dueDate || 'Chưa xác định'}`, `Mã thanh toán: ${invoice.paymentCode || ''}`, `Ngân hàng: ${detail.bank || 'Chưa cấu hình'}`].filter(Boolean);
   lines.forEach((line, index) => context.fillText(line, 60, 140 + index * 58));
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (navigator.clipboard?.write && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); showToast('Đã sao chép hóa đơn dạng ảnh.'); return; }
@@ -2031,6 +2185,36 @@ function openAdminPasswordForm(required = false) {
   });
 }
 
+function openInvoiceSettings() {
+  const settings = resolveInvoiceSettings(buildings[selectedBuildingIndex] || {});
+  openModal('Mẫu hóa đơn chung', `<form class="building-form" data-invoice-settings-form>
+    <p class="entity-summary">Thông tin này dùng chung cho toàn bộ hóa đơn PDF và ảnh của tất cả tòa nhà.</p>
+    <label>Tên đơn vị<input name="companyName" required maxlength="120" value="${escapeHtml(settings.companyName)}" placeholder="Ví dụ: Công ty TNHH Phú Gia Land"></label>
+    <label>Logo hóa đơn<input name="invoiceLogo" type="file" accept="image/jpeg,image/png,image/webp"><small class="form-hint">Chọn ảnh JPG, PNG hoặc WebP tối đa 5 MB. Logo hiện tại: ${escapeHtml(settings.invoiceLogoUrl)}</small></label>
+    <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu mẫu chung</button></div>
+  </form>`, () => {
+    document.querySelector('[data-modal-cancel]').addEventListener('click', openProfile);
+    document.querySelector('[data-invoice-settings-form]').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const logoFile = form.get('invoiceLogo');
+      if (logoFile?.size > 5_000_000) { showToast('Logo tối đa 5 MB'); return; }
+      const submitButton = event.currentTarget.querySelector('[type="submit"]');
+      submitButton.disabled = true;
+      try {
+        const uploadedLogo = logoFile?.size ? await uploadPropertyMedia(logoFile, { code: 'SYSTEM' }, 'INVOICE-LOGO', 1) : null;
+        invoiceSettings = { companyName: String(form.get('companyName') || '').trim(), invoiceLogoUrl: uploadedLogo?.url || settings.invoiceLogoUrl || 'assets/Logo BPG.jpg' };
+        persistCollection(invoiceSettingsStorageKey, invoiceSettings);
+        openProfile();
+        showToast(uploadedLogo ? 'Đã tải logo và lưu mẫu hóa đơn chung' : 'Đã lưu mẫu hóa đơn chung');
+      } catch (error) {
+        submitButton.disabled = false;
+        showToast(error.message || 'Không thể tải logo hóa đơn');
+      }
+    });
+  });
+}
+
 function openProfile() {
   if (currentUserRole === 'staff') {
     const name = currentUserName || 'Nhân viên';
@@ -2042,7 +2226,8 @@ function openProfile() {
   }
   const profile = readStorage('nvp-manager-profile', { name: 'Nguyễn Hữu Phú', title: 'Chủ nhà' });
   const initials = profile.name.split(/\s+/).map((part) => part[0]).slice(-3).join('').toUpperCase();
-  openModal('Tài khoản & hệ thống', `<div class="profile-summary"><span class="avatar large">${escapeHtml(initials)}</span><div><strong>${escapeHtml(profile.name)}</strong><small>${escapeHtml(profile.title)}</small></div></div><div class="profile-actions profile-actions-grouped"><section><p>Vận hành</p><button type="button" data-smart-home-settings>Thiết lập API Smart Home</button><button type="button" data-profile-action>Thông tin cá nhân</button><button type="button" data-install-app ${pwaInstalled ? 'disabled' : ''}>${pwaInstalled ? 'Ứng dụng đã được cài đặt' : 'Cài đặt ứng dụng'}</button></section><section><p>Bảo mật</p><button type="button" data-change-admin-password>Đổi mật khẩu</button></section><details class="profile-recovery"><summary>Sao lưu và khôi phục</summary><button type="button" data-export-data>Xuất bản sao dữ liệu</button><label class="profile-file">Nhập bản sao dữ liệu<input type="file" accept="application/json" data-import-data></label><button type="button" data-reset-data>Xóa toàn bộ dữ liệu</button></details><button type="button" class="profile-logout" data-logout>Đăng xuất</button></div>`, () => {
+  openModal('Tài khoản & hệ thống', `<div class="profile-summary"><span class="avatar large">${escapeHtml(initials)}</span><div><strong>${escapeHtml(profile.name)}</strong><small>${escapeHtml(profile.title)}</small></div></div><div class="profile-actions profile-actions-grouped"><section><p>Vận hành</p><button type="button" data-invoice-settings>Mẫu hóa đơn chung</button><button type="button" data-smart-home-settings>Thiết lập API Smart Home</button><button type="button" data-profile-action>Thông tin cá nhân</button><button type="button" data-install-app ${pwaInstalled ? 'disabled' : ''}>${pwaInstalled ? 'Ứng dụng đã được cài đặt' : 'Cài đặt ứng dụng'}</button></section><section><p>Bảo mật</p><button type="button" data-change-admin-password>Đổi mật khẩu</button></section><details class="profile-recovery"><summary>Sao lưu và khôi phục</summary><button type="button" data-export-data>Xuất bản sao dữ liệu</button><label class="profile-file">Nhập bản sao dữ liệu<input type="file" accept="application/json" data-import-data></label><button type="button" data-reset-data>Xóa toàn bộ dữ liệu</button></details><button type="button" class="profile-logout" data-logout>Đăng xuất</button></div>`, () => {
+    document.querySelector('[data-invoice-settings]').addEventListener('click', openInvoiceSettings);
     document.querySelector('[data-smart-home-settings]').addEventListener('click', openSmartHomeSettings);
     document.querySelector('[data-profile-action]').addEventListener('click', () => openModal('Thông tin cá nhân', `<form class="building-form" data-manager-profile-form><label>Họ và tên<input name="name" required maxlength="80" value="${escapeHtml(profile.name)}"></label><label>Vai trò<input name="title" required maxlength="50" value="${escapeHtml(profile.title)}"></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu thông tin</button></div></form>`, () => {
       document.querySelector('[data-modal-cancel]').addEventListener('click', openProfile);

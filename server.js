@@ -66,6 +66,26 @@ const tuyaSingaporeEndpoint = tuyaDataCenters.singapore.endpoint;
 const tuyaSingaporeMqEndpoint = 'wss://mqe.tuyaus.com:8285/';
 const loginAttempts = new Map();
 const administrativeUnitsUrl = 'https://provinces.open-api.vn/api/v2/?depth=2';
+const bankDirectoryUrl = process.env.NVP_BANK_DIRECTORY_URL === undefined ? 'https://api.vietqr.io/v2/banks' : String(process.env.NVP_BANK_DIRECTORY_URL);
+const fallbackBanks = [
+  ['970405', 'Agribank', 'Ngân hàng Nông nghiệp và Phát triển Nông thôn Việt Nam'],
+  ['970416', 'ACB', 'Ngân hàng TMCP Á Châu'],
+  ['970418', 'BIDV', 'Ngân hàng TMCP Đầu tư và Phát triển Việt Nam'],
+  ['970437', 'HDBank', 'Ngân hàng TMCP Phát triển TP.HCM'],
+  ['970422', 'MBBank', 'Ngân hàng TMCP Quân đội'],
+  ['970426', 'MSB', 'Ngân hàng TMCP Hàng Hải Việt Nam'],
+  ['970448', 'OCB', 'Ngân hàng TMCP Phương Đông'],
+  ['970403', 'Sacombank', 'Ngân hàng TMCP Sài Gòn Thương Tín'],
+  ['970443', 'SHB', 'Ngân hàng TMCP Sài Gòn - Hà Nội'],
+  ['970407', 'Techcombank', 'Ngân hàng TMCP Kỹ thương Việt Nam'],
+  ['970423', 'TPBank', 'Ngân hàng TMCP Tiên Phong'],
+  ['970441', 'VIB', 'Ngân hàng TMCP Quốc tế Việt Nam'],
+  ['970433', 'VietBank', 'Ngân hàng TMCP Việt Nam Thương Tín'],
+  ['970436', 'Vietcombank', 'Ngân hàng TMCP Ngoại thương Việt Nam'],
+  ['970415', 'VietinBank', 'Ngân hàng TMCP Công thương Việt Nam'],
+  ['970432', 'VPBank', 'Ngân hàng TMCP Việt Nam Thịnh Vượng']
+].map(([bin, shortName, name]) => ({ bin, shortName, name }));
+let bankDirectoryCache = { expiresAt: 0, banks: [] };
 const allowedKeys = new Set([
   'nvp-buildings',
   'nvp-leads',
@@ -84,6 +104,7 @@ const allowedKeys = new Set([
   'nvp-notifications',
   'nvp-users',
   'nvp-feedback',
+  'nvp-invoice-settings',
   'nvp-smart-home-config',
   'nvp-push-subscriptions'
 ]);
@@ -630,6 +651,32 @@ function paymentDueDate(month, paymentDay = 5) {
   return targetMonth.toISOString().slice(0, 10);
 }
 
+function configuredAmount(...values) {
+  const configured = values.find((value) => value !== '' && value !== null && value !== undefined && Number.isFinite(Number(value)));
+  return Number(configured ?? 0);
+}
+
+async function getBankDirectory() {
+  if (bankDirectoryCache.expiresAt > Date.now() && bankDirectoryCache.banks.length) return bankDirectoryCache.banks;
+  let banks = fallbackBanks;
+  if (bankDirectoryUrl) {
+    try {
+      const response = await fetch(bankDirectoryUrl, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error(`Bank directory returned ${response.status}`);
+      const payload = await response.json();
+      const remoteBanks = (Array.isArray(payload.data) ? payload.data : [])
+        .filter((bank) => bank.transferSupported === 1 && /^\d{6}$/.test(String(bank.bin || '')) && bank.shortName && bank.name)
+        .map((bank) => ({ bin: String(bank.bin), shortName: String(bank.shortName), name: String(bank.name) }));
+      if (remoteBanks.length) banks = remoteBanks;
+    } catch (error) {
+      console.warn('Unable to refresh bank directory, using fallback:', error.message);
+    }
+  }
+  banks = [...banks].sort((left, right) => left.shortName.localeCompare(right.shortName, 'vi'));
+  bankDirectoryCache = { expiresAt: Date.now() + 24 * 60 * 60_000, banks };
+  return banks;
+}
+
 async function closeUtilityInvoices(month = previousMonth()) {
   const state = await readState();
   const buildings = parseStateValue(state, 'nvp-buildings', []);
@@ -644,9 +691,9 @@ async function closeUtilityInvoices(month = previousMonth()) {
     const electricity = records.filter((log) => log.service === 'electricity').reduce((total, log) => total + Number(log.amount || 0), 0);
     const configuredWaterMode = apartment.waterBillingMode || building.settings?.waterBillingMode || 'metered';
     const meteredWater = records.filter((log) => log.service === 'water').reduce((total, log) => total + Number(log.amount || 0), 0);
-    const water = configuredWaterMode === 'fixed' ? Number(apartment.waterFixedAmount || (building.settings?.waterFloorRates || {})[apartment.floor] || building.settings?.waterFixedAmount || 0) : meteredWater;
+    const water = configuredWaterMode === 'fixed' ? configuredAmount(apartment.waterFixedAmount, (building.settings?.waterFloorRates || {})[apartment.floor], building.settings?.waterFixedAmount) : meteredWater;
     const rent = Number(apartment.rentAmount || 0);
-    const service = Number(apartment.serviceFee || building.settings?.managementFee || 0);
+    const service = configuredAmount(apartment.serviceFee, building.settings?.managementFee);
     const amount = rent + electricity + water + service;
     if (amount <= 0) return;
     const invoice = { id: crypto.randomUUID(), paymentCode: `NVP-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`, building: building.name, apartment: apartment.name, tenantEmail: customer.email || '', tenantName: customer.name || '', title: `Hóa đơn tháng ${month} - ${apartment.name}`, type: 'monthly', source: 'monthly-closing', month, amount, billingLines: { rent, electricity, water, service, serviceLabel: apartment.serviceFeeLabel || 'Phí dịch vụ' }, utilityLines: { electricity, water }, dueDate: paymentDueDate(month, building.settings?.paymentDay), approvalStatus: 'pending', status: 'unpaid', createdAt: new Date().toISOString() };
@@ -779,7 +826,7 @@ async function syncTuyaEnergyReadings(month = new Date().toISOString().slice(0, 
     }
     const previous = Number(existing?.previous ?? (baselineIsNewer ? apartment.electricityBaseline : previousLog?.current) ?? apartment.electricityBaseline);
     if (reading.current < previous) { skipped.push({ meterId: reading.meterId, reason: 'Current reading is lower than previous reading' }); return; }
-    const rate = Number(apartment.electricityRate || (building.settings?.electricityFloorRates || {})[apartment.floor] || building.settings?.electricityRate || 0);
+    const rate = configuredAmount(apartment.electricityRate, (building.settings?.electricityFloorRates || {})[apartment.floor], building.settings?.electricityRate);
     if (reading.current === previous) { skipped.push({ meterId: reading.meterId, reason: 'Reading has not changed' }); return; }
     if (!Number.isFinite(rate) || rate <= 0) { skipped.push({ meterId: reading.meterId, reason: 'Electricity rate is not configured' }); return; }
     const log = { id: existing?.id || crypto.randomUUID(), apartment: apartmentKey, meterId: reading.meterId, service: 'electricity', previous, current: reading.current, usage: reading.current - previous, rate, amount: (reading.current - previous) * rate, month, source: 'tuya-cloud', createdAt: existing?.createdAt || reading.timestamp, updatedAt: reading.timestamp };
@@ -1094,8 +1141,7 @@ const server = http.createServer(async (request, response) => {
         const previous = Number(baselineIsNewer ? apartment.electricityBaseline : previousLog?.current ?? apartment.electricityBaseline);
         if (reading.current < previous) { skipped.push({ meterId: reading.meterId, reason: 'Current reading is lower than previous reading' }); return; }
         if (meterLogs.some((item) => item.service === 'electricity' && item.meterId === reading.meterId && item.month === month && Number(item.current) === reading.current)) { skipped.push({ meterId: reading.meterId, reason: 'Reading already processed' }); return; }
-        const floorRate = Number((building.settings?.electricityFloorRates || {})[apartment.floor] || 0);
-        const rate = Number(apartment.electricityRate || floorRate || building.settings?.electricityRate || 0);
+        const rate = configuredAmount(apartment.electricityRate, (building.settings?.electricityFloorRates || {})[apartment.floor], building.settings?.electricityRate);
         const usage = reading.current - previous;
         const amount = usage * rate;
         if (usage <= 0) { skipped.push({ meterId: reading.meterId, reason: 'Reading has not changed' }); return; }
@@ -1115,6 +1161,10 @@ const server = http.createServer(async (request, response) => {
       const upstream = await fetch(administrativeUnitsUrl);
       if (!upstream.ok) throw new Error('Administrative data unavailable');
       sendJson(response, 200, await upstream.json());
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/api/banks') {
+      sendJson(response, 200, { banks: await getBankDirectory() });
       return;
     }
     if (request.method === 'POST' && request.url === '/api/bank-webhook') {
