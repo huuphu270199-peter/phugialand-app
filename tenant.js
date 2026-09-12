@@ -1,6 +1,6 @@
-const frontendCacheName = 'phu-gia-land-v65';
+const frontendCacheName = 'phu-gia-land-v66';
 if ('caches' in window) caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('phu-gia-land-') && key !== frontendCacheName).map((key) => caches.delete(key)))).catch(() => {});
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=65').then((registration) => registration.update()).catch((error) => console.warn('Tenant service worker registration failed:', error)));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=66').then((registration) => registration.update()).catch((error) => console.warn('Tenant service worker registration failed:', error)));
 
 const loginSection = document.querySelector('[data-tenant-login]');
 const dashboardSection = document.querySelector('[data-tenant-dashboard]');

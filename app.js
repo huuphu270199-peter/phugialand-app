@@ -1,6 +1,6 @@
-const frontendCacheName = 'phu-gia-land-v65';
+const frontendCacheName = 'phu-gia-land-v66';
 if ('caches' in window) caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('phu-gia-land-') && key !== frontendCacheName).map((key) => caches.delete(key)))).catch(() => {});
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=65').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=66').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
 
 const staffSensitiveStorageKeys = ['nvp-cashflow', 'nvp-commissions', 'nvp-deposit-ledger', 'nvp-users', 'nvp-smart-home-config'];
 let currentUserRole = sessionStorage.getItem('nvp-user-role') || '';
@@ -44,6 +44,24 @@ const pendingSyncKeys = new Set();
 let syncTimeout;
 let administrativeUnitsPromise;
 let bankDirectoryPromise;
+const fallbackBankDirectory = [
+  ['970405', 'Agribank', 'Ngân hàng Nông nghiệp và Phát triển Nông thôn Việt Nam'],
+  ['970416', 'ACB', 'Ngân hàng TMCP Á Châu'],
+  ['970418', 'BIDV', 'Ngân hàng TMCP Đầu tư và Phát triển Việt Nam'],
+  ['970437', 'HDBank', 'Ngân hàng TMCP Phát triển TP.HCM'],
+  ['970422', 'MBBank', 'Ngân hàng TMCP Quân đội'],
+  ['970426', 'MSB', 'Ngân hàng TMCP Hàng Hải Việt Nam'],
+  ['970448', 'OCB', 'Ngân hàng TMCP Phương Đông'],
+  ['970403', 'Sacombank', 'Ngân hàng TMCP Sài Gòn Thương Tín'],
+  ['970443', 'SHB', 'Ngân hàng TMCP Sài Gòn - Hà Nội'],
+  ['970407', 'Techcombank', 'Ngân hàng TMCP Kỹ thương Việt Nam'],
+  ['970423', 'TPBank', 'Ngân hàng TMCP Tiên Phong'],
+  ['970441', 'VIB', 'Ngân hàng TMCP Quốc tế Việt Nam'],
+  ['970433', 'VietBank', 'Ngân hàng TMCP Việt Nam Thương Tín'],
+  ['970436', 'Vietcombank', 'Ngân hàng TMCP Ngoại thương Việt Nam'],
+  ['970415', 'VietinBank', 'Ngân hàng TMCP Công thương Việt Nam'],
+  ['970432', 'VPBank', 'Ngân hàng TMCP Việt Nam Thịnh Vượng']
+].map(([bin, shortName, name]) => ({ bin, shortName, name }));
 let passwordChangeRequired = false;
 let modalCloseAction = null;
 let customerManagerStatus = 'renting';
@@ -116,8 +134,9 @@ async function getBankDirectory() {
   bankDirectoryPromise ||= fetch('/api/banks').then(async (response) => {
     if (!response.ok) throw new Error('Bank directory unavailable');
     const payload = await response.json();
-    return Array.isArray(payload.banks) ? payload.banks : [];
-  });
+    if (!Array.isArray(payload.banks) || !payload.banks.length) throw new Error('Bank directory is empty');
+    return payload.banks;
+  }).catch(() => fallbackBankDirectory);
   return bankDirectoryPromise;
 }
 
@@ -2810,5 +2829,5 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-document.documentElement.dataset.appVersion = '65';
+document.documentElement.dataset.appVersion = '66';
 

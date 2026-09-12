@@ -66,6 +66,7 @@ const tuyaSingaporeEndpoint = tuyaDataCenters.singapore.endpoint;
 const tuyaSingaporeMqEndpoint = 'wss://mqe.tuyaus.com:8285/';
 const loginAttempts = new Map();
 const administrativeUnitsUrl = 'https://provinces.open-api.vn/api/v2/?depth=2';
+const applicationRelease = '2026-09-12.3';
 const bankDirectoryUrl = process.env.NVP_BANK_DIRECTORY_URL === undefined ? 'https://api.vietqr.io/v2/banks' : String(process.env.NVP_BANK_DIRECTORY_URL);
 const fallbackBanks = [
   ['970405', 'Agribank', 'Ngân hàng Nông nghiệp và Phát triển Nông thôn Việt Nam'],
@@ -951,7 +952,7 @@ const server = http.createServer(async (request, response) => {
     }
     await loadOwnerCredentials();
     if (request.method === 'GET' && request.url === '/api/health') {
-      sendJson(response, 200, { ok: true, service: 'phu-gia-land-api', host: getRequestHost(request), forwardedHost: String(request.headers['x-forwarded-host'] || '') });
+      sendJson(response, 200, { ok: true, service: 'phu-gia-land-api', release: applicationRelease, capabilities: { bankDirectory: true }, host: getRequestHost(request), forwardedHost: String(request.headers['x-forwarded-host'] || '') });
       return;
     }
     if (['POST', 'PUT', 'DELETE'].includes(request.method) && !isTrustedOrigin(request)) {
