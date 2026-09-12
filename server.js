@@ -99,7 +99,6 @@ const allowedKeys = new Set([
   'nvp-locations',
   'nvp-meter-logs',
   'nvp-commissions',
-  'nvp-prepayments',
   'nvp-deposit-ledger',
   'nvp-notifications',
   'nvp-users',
@@ -111,12 +110,11 @@ const allowedKeys = new Set([
 const staffRestrictedKeys = new Set([
   'nvp-cashflow',
   'nvp-commissions',
-  'nvp-prepayments',
   'nvp-deposit-ledger',
   'nvp-users',
   'nvp-smart-home-config'
 ]);
-const staffRestrictedCatalogs = new Set(['daily', 'profit', 'debts', 'payments', 'finance-settings', 'accounts', 'debt-accounts', 'einvoice', 'income-types']);
+const staffRestrictedCatalogs = new Set(['daily', 'profit', 'debts', 'finance-settings', 'accounts', 'debt-accounts', 'einvoice', 'income-types']);
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -220,6 +218,28 @@ function filterIncomingStateForRole(incoming, role, currentState) {
     filtered['nvp-catalogs'] = JSON.stringify(incomingCatalogs);
   }
   return filtered;
+}
+
+function validateIncomingFinancialState(incoming) {
+  const collectionRules = {
+    'nvp-invoices': (item) => Number.isFinite(Number(item.amount)) && Number(item.amount) >= 0 && ['pending', 'approved'].includes(item.approvalStatus || 'approved') && ['unpaid', 'paid'].includes(item.status || 'unpaid'),
+    'nvp-cashflow': (item) => Number.isFinite(Number(item.amount)) && Number(item.amount) >= 0 && ['income', 'expense'].includes(item.type),
+    'nvp-commissions': (item) => Number.isFinite(Number(item.amount)) && Number(item.amount) >= 0,
+    'nvp-reservations': (item) => Number.isFinite(Number(item.amount)) && Number(item.amount) >= 0
+  };
+  for (const [key, isValid] of Object.entries(collectionRules)) {
+    if (!Object.prototype.hasOwnProperty.call(incoming, key)) continue;
+    let records;
+    try { records = JSON.parse(incoming[key] || '[]'); } catch { return `${key} must contain valid JSON`; }
+    if (!Array.isArray(records) || records.some((item) => !item || typeof item !== 'object' || !isValid(item))) return `${key} contains invalid financial data`;
+  }
+  if (Object.prototype.hasOwnProperty.call(incoming, 'nvp-catalogs')) {
+    let catalogs;
+    try { catalogs = JSON.parse(incoming['nvp-catalogs'] || '{}'); } catch { return 'nvp-catalogs must contain valid JSON'; }
+    const amounts = [...(catalogs.assets || []).map((item) => item.purchaseAmount || 0), ...(catalogs['asset-fix'] || []).map((item) => item.cost || 0)];
+    if (amounts.some((amount) => !Number.isFinite(Number(amount)) || Number(amount) < 0)) return 'nvp-catalogs contains invalid financial data';
+  }
+  return '';
 }
 
 function isAdministratorPasswordChangeRequired() {
@@ -656,6 +676,47 @@ function configuredAmount(...values) {
   return Number(configured ?? 0);
 }
 
+function financialActor(request) {
+  const session = getApplicationSession(request);
+  return session ? { email: session.email, role: session.role } : { email: 'bank-webhook', role: 'system' };
+}
+
+function createCashflowEntry({ title, type, amount, category, method, building, apartment, sourceType, sourceId, invoiceCode, actor, createdAt = new Date().toISOString(), reversalOf = '' }) {
+  return {
+    id: crypto.randomUUID(),
+    title,
+    type,
+    amount: Number(amount),
+    category,
+    method,
+    building: building || '',
+    apartment: apartment || '',
+    sourceType,
+    sourceId,
+    invoiceCode: invoiceCode || '',
+    recordedBy: actor?.email || 'system',
+    recordedRole: actor?.role || 'system',
+    createdAt,
+    reversalOf
+  };
+}
+
+function collectInvoice(invoices, cashflow, invoice, { amount, method, actor, transactionId = '', content = '' }) {
+  const existingEntry = cashflow.find((entry) => entry.sourceType === 'invoice-payment' && entry.sourceId === invoice.id && !entry.reversalOf && !cashflow.some((candidate) => candidate.reversalOf === entry.id));
+  if (invoice.status === 'paid' || existingEntry) return { duplicate: true, invoice, cashflowEntry: existingEntry };
+  if (invoice.approvalStatus !== 'approved') return { error: 'Invoice is not approved', status: 409 };
+  const paidAmount = Number(amount);
+  if (!Number.isFinite(paidAmount) || paidAmount < Number(invoice.amount || 0)) return { error: 'Payment amount is insufficient', status: 400 };
+  const paidAt = new Date().toISOString();
+  Object.assign(invoice, { status: 'paid', paidAt, paidAmount, paymentMethod: method, paidBy: actor?.email || 'system', overpayment: Math.max(paidAmount - Number(invoice.amount || 0), 0) });
+  if (transactionId) invoice.bankTransactionId = transactionId;
+  if (content) invoice.bankContent = content;
+  const cashflowEntry = createCashflowEntry({ title: `Thu hóa đơn ${invoice.paymentCode || invoice.title}`, type: 'income', amount: paidAmount, category: 'invoice-payment', method, building: invoice.building, apartment: invoice.apartment, sourceType: 'invoice-payment', sourceId: invoice.id, invoiceCode: invoice.paymentCode, actor, createdAt: paidAt });
+  if (transactionId) cashflowEntry.bankTransactionId = transactionId;
+  cashflow.push(cashflowEntry);
+  return { duplicate: false, invoice, cashflowEntry };
+}
+
 async function getBankDirectory() {
   if (bankDirectoryCache.expiresAt > Date.now() && bankDirectoryCache.banks.length) return bankDirectoryCache.banks;
   let banks = fallbackBanks;
@@ -965,7 +1026,7 @@ const server = http.createServer(async (request, response) => {
     }
     const invoiceApprovalMatch = request.method === 'POST' && request.url.match(/^\/api\/invoices\/([^/]+)\/approve$/);
     if (invoiceApprovalMatch) {
-      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      if (!isOwner(request)) { sendJson(response, 403, { error: 'Owner access required' }); return; }
       const state = await readState();
       const invoices = parseStateValue(state, 'nvp-invoices', []);
       const notifications = parseStateValue(state, 'nvp-notifications', []);
@@ -983,6 +1044,158 @@ const server = http.createServer(async (request, response) => {
         await sendPushToEmail(state, invoice.tenantEmail, 'Hóa đơn mới', message);
       }
       sendJson(response, 200, { ok: true, invoice });
+      return;
+    }
+    const invoiceCollectionMatch = request.method === 'POST' && request.url.match(/^\/api\/invoices\/([^/]+)\/collect$/);
+    if (invoiceCollectionMatch) {
+      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      const payload = await readBody(request);
+      const result = await withStateMutation(async () => {
+        const state = await readState();
+        const invoices = parseStateValue(state, 'nvp-invoices', []);
+        const cashflow = parseStateValue(state, 'nvp-cashflow', []);
+        const invoice = invoices.find((item) => item.id === decodeURIComponent(invoiceCollectionMatch[1]));
+        if (!invoice) return { status: 404, payload: { error: 'Invoice not found' } };
+        const collected = collectInvoice(invoices, cashflow, invoice, { amount: payload.amount ?? invoice.amount, method: ['cash', 'bank-transfer', 'other'].includes(payload.method) ? payload.method : 'cash', actor: financialActor(request) });
+        if (collected.error) return { status: collected.status, payload: { error: collected.error } };
+        if (!collected.duplicate) {
+          state.updatedAt = collected.invoice.paidAt;
+          state.state['nvp-invoices'] = JSON.stringify(invoices);
+          state.state['nvp-cashflow'] = JSON.stringify(cashflow);
+          await writeState(state);
+        }
+        return { status: 200, payload: { ok: true, duplicate: collected.duplicate, invoice: collected.invoice, cashflowEntry: collected.cashflowEntry } };
+      });
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    const invoiceReversalMatch = request.method === 'POST' && request.url.match(/^\/api\/invoices\/([^/]+)\/reverse$/);
+    if (invoiceReversalMatch) {
+      if (!isOwner(request)) { sendJson(response, 403, { error: 'Owner access required' }); return; }
+      const payload = await readBody(request);
+      const reason = String(payload.reason || '').trim();
+      if (reason.length < 3) { sendJson(response, 400, { error: 'Reversal reason is required' }); return; }
+      const result = await withStateMutation(async () => {
+        const state = await readState();
+        const invoices = parseStateValue(state, 'nvp-invoices', []);
+        const cashflow = parseStateValue(state, 'nvp-cashflow', []);
+        const invoice = invoices.find((item) => item.id === decodeURIComponent(invoiceReversalMatch[1]));
+        if (!invoice) return { status: 404, payload: { error: 'Invoice not found' } };
+        if (invoice.status !== 'paid') return { status: 409, payload: { error: 'Invoice is not paid' } };
+        const original = [...cashflow].reverse().find((entry) => entry.sourceType === 'invoice-payment' && entry.sourceId === invoice.id && !entry.reversalOf);
+        if (!original) return { status: 409, payload: { error: 'Payment transaction not found' } };
+        const existingReversal = cashflow.find((entry) => entry.reversalOf === original.id);
+        if (existingReversal) return { status: 200, payload: { ok: true, duplicate: true, invoice, cashflowEntry: existingReversal } };
+        const reversedAt = new Date().toISOString();
+        const actor = financialActor(request);
+        const reversal = createCashflowEntry({ title: `Hoàn tác ${original.title}`, type: 'expense', amount: original.amount, category: 'payment-reversal', method: original.method, building: invoice.building, apartment: invoice.apartment, sourceType: 'invoice-payment-reversal', sourceId: invoice.id, invoiceCode: invoice.paymentCode, actor, createdAt: reversedAt, reversalOf: original.id });
+        reversal.note = reason;
+        cashflow.push(reversal);
+        Object.assign(invoice, { status: 'unpaid', paymentReversedAt: reversedAt, paymentReversedBy: actor.email, paymentReversalReason: reason });
+        state.updatedAt = reversedAt;
+        state.state['nvp-invoices'] = JSON.stringify(invoices);
+        state.state['nvp-cashflow'] = JSON.stringify(cashflow);
+        await writeState(state);
+        return { status: 200, payload: { ok: true, invoice, cashflowEntry: reversal } };
+      });
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/api/financial-events') {
+      if (!isAuthenticated(request)) { sendJson(response, 401, { error: 'Unauthorized' }); return; }
+      const payload = await readBody(request);
+      const amount = Number(payload.amount || 0);
+      const allowedSourceTypes = new Set(['commission-payment', 'asset-repair', 'asset-purchase', 'deposit-receipt', 'deposit-refund', 'deposit-forfeit', 'deposit-apply']);
+      if (!allowedSourceTypes.has(payload.sourceType) || !String(payload.sourceId || '').trim() || !Number.isFinite(amount) || amount <= 0) { sendJson(response, 400, { error: 'Invalid financial event' }); return; }
+      const result = await withStateMutation(async () => {
+        const state = await readState();
+        const cashflow = parseStateValue(state, 'nvp-cashflow', []);
+        const existing = cashflow.find((entry) => entry.sourceType === payload.sourceType && entry.sourceId === payload.sourceId && !cashflow.some((candidate) => candidate.reversalOf === entry.id));
+        if (existing && Number(existing.amount) !== amount) return { conflict: true, cashflowEntry: existing };
+        if (existing) return { duplicate: true, cashflowEntry: existing };
+        const cashflowEntry = createCashflowEntry({ title: String(payload.title || 'Giao dịch phát sinh').slice(0, 160), type: payload.type === 'income' ? 'income' : 'expense', amount, category: String(payload.category || payload.sourceType).slice(0, 60), method: ['cash', 'bank-transfer', 'other'].includes(payload.method) ? payload.method : 'cash', building: String(payload.building || '').slice(0, 120), apartment: String(payload.apartment || '').slice(0, 120), sourceType: payload.sourceType, sourceId: String(payload.sourceId), actor: financialActor(request) });
+        cashflowEntry.affectsProfit = !['deposit-receipt', 'deposit-refund'].includes(payload.sourceType);
+        cashflowEntry.affectsCash = !['deposit-forfeit', 'deposit-apply'].includes(payload.sourceType);
+        cashflow.push(cashflowEntry);
+        state.updatedAt = cashflowEntry.createdAt;
+        state.state['nvp-cashflow'] = JSON.stringify(cashflow);
+        await writeState(state);
+        return { duplicate: false, cashflowEntry };
+      });
+      if (result.conflict) { sendJson(response, 409, { error: 'Reverse the existing transaction before changing its amount', cashflowEntry: result.cashflowEntry }); return; }
+      sendJson(response, 200, { ok: true, ...result });
+      return;
+    }
+    const depositDispositionMatch = request.method === 'POST' && request.url.match(/^\/api\/deposits\/([^/]+)\/dispose$/);
+    if (depositDispositionMatch) {
+      if (!isOwner(request)) { sendJson(response, 403, { error: 'Owner access required' }); return; }
+      const payload = await readBody(request);
+      if (!['refunded', 'forfeited', 'applied'].includes(payload.disposition)) { sendJson(response, 400, { error: 'Invalid deposit disposition' }); return; }
+      const result = await withStateMutation(async () => {
+        const state = await readState();
+        const reservations = parseStateValue(state, 'nvp-reservations', []);
+        const invoices = parseStateValue(state, 'nvp-invoices', []);
+        const cashflow = parseStateValue(state, 'nvp-cashflow', []);
+        const reservation = reservations.find((item) => item.id === decodeURIComponent(depositDispositionMatch[1]));
+        if (!reservation) return { status: 404, payload: { error: 'Deposit not found' } };
+        if (!['active', 'held'].includes(reservation.status)) return { status: 409, payload: { error: 'Deposit was already settled' } };
+        const amount = Number(reservation.amount || 0);
+        if (!Number.isFinite(amount) || amount <= 0) return { status: 400, payload: { error: 'Deposit amount is invalid' } };
+        let invoice = null;
+        let appliedAmount = amount;
+        if (payload.disposition === 'applied') {
+          invoice = invoices.find((item) => item.id === payload.invoiceId && item.approvalStatus === 'approved' && item.status !== 'paid');
+          if (!invoice) return { status: 409, payload: { error: 'Eligible invoice not found' } };
+          appliedAmount = Math.min(amount, Number(invoice.amount || 0));
+          invoice.originalAmount ||= Number(invoice.amount || 0);
+          invoice.depositApplied = Number(invoice.depositApplied || 0) + appliedAmount;
+          invoice.amount = Math.max(Number(invoice.amount || 0) - appliedAmount, 0);
+          if (invoice.amount === 0) Object.assign(invoice, { status: 'paid', paidAt: new Date().toISOString(), paidAmount: 0, paymentMethod: 'deposit' });
+        }
+        const sourceType = payload.disposition === 'refunded' ? 'deposit-refund' : payload.disposition === 'forfeited' ? 'deposit-forfeit' : 'deposit-apply';
+        const existing = cashflow.find((entry) => entry.sourceType === sourceType && entry.sourceId === reservation.id);
+        if (existing) return { status: 200, payload: { ok: true, duplicate: true, reservation, invoice, cashflowEntry: existing } };
+        const actor = financialActor(request);
+        const entry = createCashflowEntry({ title: payload.disposition === 'refunded' ? `Hoàn cọc - ${reservation.name}` : payload.disposition === 'forfeited' ? `Ghi nhận cọc giữ lại - ${reservation.name}` : `Khấu trừ cọc vào hóa đơn - ${reservation.name}`, type: payload.disposition === 'refunded' ? 'expense' : 'income', amount: appliedAmount, category: sourceType, method: payload.disposition === 'refunded' ? (['cash', 'bank-transfer', 'other'].includes(payload.method) ? payload.method : 'bank-transfer') : 'other', building: reservation.building, apartment: reservation.apartment, sourceType, sourceId: reservation.id, invoiceCode: invoice?.paymentCode, actor });
+        entry.affectsCash = payload.disposition === 'refunded';
+        entry.affectsProfit = payload.disposition !== 'refunded';
+        cashflow.push(entry);
+        Object.assign(reservation, { status: payload.disposition, disposedAt: entry.createdAt, disposedBy: actor.email, dispositionNote: String(payload.note || '').slice(0, 300), appliedInvoiceId: invoice?.id || '', appliedAmount });
+        state.updatedAt = entry.createdAt;
+        state.state['nvp-reservations'] = JSON.stringify(reservations);
+        state.state['nvp-invoices'] = JSON.stringify(invoices);
+        state.state['nvp-cashflow'] = JSON.stringify(cashflow);
+        await writeState(state);
+        return { status: 200, payload: { ok: true, reservation, invoice, cashflowEntry: entry } };
+      });
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    const cashflowReversalMatch = request.method === 'POST' && request.url.match(/^\/api\/cashflow\/([^/]+)\/reverse$/);
+    if (cashflowReversalMatch) {
+      if (!isOwner(request)) { sendJson(response, 403, { error: 'Owner access required' }); return; }
+      const payload = await readBody(request);
+      const reason = String(payload.reason || '').trim();
+      if (reason.length < 3) { sendJson(response, 400, { error: 'Reversal reason is required' }); return; }
+      const result = await withStateMutation(async () => {
+        const state = await readState();
+        const cashflow = parseStateValue(state, 'nvp-cashflow', []);
+        const original = cashflow.find((entry) => entry.id === decodeURIComponent(cashflowReversalMatch[1]));
+        if (!original) return { status: 404, payload: { error: 'Transaction not found' } };
+        if (original.reversalOf) return { status: 409, payload: { error: 'A reversal cannot be reversed' } };
+        const existing = cashflow.find((entry) => entry.reversalOf === original.id);
+        if (existing) return { status: 200, payload: { ok: true, duplicate: true, cashflowEntry: existing } };
+        const reversal = createCashflowEntry({ title: `Hoàn tác ${original.title}`, type: original.type === 'income' ? 'expense' : 'income', amount: original.amount, category: 'transaction-reversal', method: original.method || 'other', building: original.building, apartment: original.apartment, sourceType: 'cashflow-reversal', sourceId: original.id, invoiceCode: original.invoiceCode, actor: financialActor(request), reversalOf: original.id });
+        reversal.affectsCash = original.affectsCash !== false;
+        reversal.affectsProfit = original.affectsProfit !== false;
+        reversal.note = reason;
+        cashflow.push(reversal);
+        state.updatedAt = reversal.createdAt;
+        state.state['nvp-cashflow'] = JSON.stringify(cashflow);
+        await writeState(state);
+        return { status: 200, payload: { ok: true, cashflowEntry: reversal } };
+      });
+      sendJson(response, result.status, result.payload);
       return;
     }
     if (request.method === 'POST' && request.url === '/api/smart-home/readings') {
@@ -1192,16 +1405,9 @@ const server = http.createServer(async (request, response) => {
         if (existing) return { status: 200, payload: { ok: true, duplicate: true, invoice: existing.paymentCode } };
         const matchedInvoice = invoices.find((item) => item.status !== 'paid' && item.paymentCode && content.toUpperCase().includes(String(item.paymentCode).toUpperCase()));
         if (!matchedInvoice) return { status: 202, payload: { ok: false, reason: 'Payment code not matched' } };
-        if (matchedInvoice.approvalStatus !== 'approved') return { status: 202, payload: { ok: false, reason: 'Invoice is not approved', invoice: matchedInvoice.paymentCode } };
         const invoice = matchedInvoice;
-        if (amount < Number(invoice.amount || 0)) return { status: 202, payload: { ok: false, reason: 'Payment amount is insufficient', invoice: invoice.paymentCode } };
-        invoice.status = 'paid';
-        invoice.paidAt = new Date().toISOString();
-        invoice.paidAmount = amount;
-        invoice.overpayment = Math.max(amount - Number(invoice.amount || 0), 0);
-        invoice.bankTransactionId = transactionId;
-        invoice.bankContent = content;
-        cashflow.push({ id: crypto.randomUUID(), title: `Thu hóa đơn ${invoice.paymentCode}`, type: 'income', amount, invoiceCode: invoice.paymentCode, bankTransactionId: transactionId, createdAt: invoice.paidAt });
+        const collected = collectInvoice(invoices, cashflow, invoice, { amount, method: 'bank-transfer', actor: financialActor(request), transactionId, content });
+        if (collected.error) return { status: 202, payload: { ok: false, reason: collected.error, invoice: invoice.paymentCode } };
         current.updatedAt = new Date().toISOString();
         current.state['nvp-invoices'] = JSON.stringify(invoices);
         current.state['nvp-cashflow'] = JSON.stringify(cashflow);
@@ -1484,6 +1690,8 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 403, { error: 'Staff cannot modify restricted data' });
         return;
       }
+      const validationError = validateIncomingFinancialState(incoming);
+      if (validationError) { sendJson(response, 400, { error: validationError }); return; }
       const next = await withStateMutation(async () => {
         const current = await readState();
         const state = filterIncomingStateForRole(incoming, tokenAuthorized ? 'owner' : session.role, current);

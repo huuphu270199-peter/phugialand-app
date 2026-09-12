@@ -173,6 +173,13 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     assert.equal(JSON.parse(state['nvp-invoice-settings']).companyName, 'Phú Gia Land');
   });
 
+  test('state synchronization rejects invalid financial collections', async () => {
+    const invalidInvoice = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-invoices': JSON.stringify([{ amount: -1, status: 'unpaid', approvalStatus: 'approved' }]) } } });
+    assert.equal(invalidInvoice.response.status, 400);
+    const invalidCashflow = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-cashflow': JSON.stringify([{ amount: 100, type: 'unknown' }]) } } });
+    assert.equal(invalidCashflow.response.status, 400);
+  });
+
   test('owner creates staff and tenant accounts with customer linkage', async () => {
     const staffResult = await request('/api/users', { cookie: ownerCookie, body: { ...staff, name: 'Nhân viên Test', role: 'staff' } });
     assert.equal(staffResult.response.status, 201);
@@ -244,16 +251,39 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
   test('approval publishes invoice once and creates one tenant notification', async () => {
     const invoices = JSON.parse((await readState())['nvp-invoices']);
     const invoiceId = invoices[0].id;
-    const first = await request(`/api/invoices/${invoiceId}/approve`, { cookie: staffCookie, body: {} });
+    const forbidden = await request(`/api/invoices/${invoiceId}/approve`, { cookie: staffCookie, body: {} });
+    assert.equal(forbidden.response.status, 403);
+    const first = await request(`/api/invoices/${invoiceId}/approve`, { cookie: ownerCookie, body: {} });
     assert.equal(first.response.status, 200);
     assert.equal(first.payload.invoice.approvalStatus, 'approved');
-    const second = await request(`/api/invoices/${invoiceId}/approve`, { cookie: staffCookie, body: {} });
+    const second = await request(`/api/invoices/${invoiceId}/approve`, { cookie: ownerCookie, body: {} });
     assert.equal(second.response.status, 200);
     const state = await readState();
     assert.equal(JSON.parse(state['nvp-notifications']).filter((item) => item.invoiceId === invoiceId).length, 1);
     const portal = await request('/api/tenant-portal', { cookie: tenantCookie });
     assert.equal(portal.payload.invoices.length, 1);
     assert.equal(portal.payload.notifications.length, 1);
+  });
+
+  test('manual invoice collection is atomic, idempotent, and reversible by owner', async () => {
+    const invoice = JSON.parse((await readState())['nvp-invoices'])[0];
+    const collected = await request(`/api/invoices/${invoice.id}/collect`, { cookie: staffCookie, body: { method: 'cash' } });
+    assert.equal(collected.response.status, 200);
+    assert.equal(collected.payload.invoice.status, 'paid');
+    assert.equal(collected.payload.cashflowEntry.sourceType, 'invoice-payment');
+    const duplicate = await request(`/api/invoices/${invoice.id}/collect`, { cookie: staffCookie, body: { method: 'cash' } });
+    assert.equal(duplicate.payload.duplicate, true);
+    let state = await readState();
+    assert.equal(JSON.parse(state['nvp-cashflow']).filter((entry) => entry.sourceType === 'invoice-payment' && entry.sourceId === invoice.id).length, 1);
+    assert.equal((await request(`/api/invoices/${invoice.id}/reverse`, { cookie: staffCookie, body: { reason: 'Nhập nhầm' } })).response.status, 403);
+    const reversed = await request(`/api/invoices/${invoice.id}/reverse`, { cookie: ownerCookie, body: { reason: 'Nhập nhầm phương thức thanh toán' } });
+    assert.equal(reversed.response.status, 200);
+    assert.equal(reversed.payload.invoice.status, 'unpaid');
+    assert.equal(reversed.payload.cashflowEntry.type, 'expense');
+    state = await readState();
+    const cashflow = JSON.parse(state['nvp-cashflow']);
+    assert.equal(cashflow.filter((entry) => entry.sourceId === invoice.id).length, 2);
+    assert.equal(cashflow.reduce((total, entry) => total + (entry.type === 'income' ? entry.amount : -entry.amount), 0), 0);
   });
 
   test('bank webhook enforces secret, amount, payment matching, and deduplication', async () => {
@@ -280,6 +310,51 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     const result = await request('/api/bank-webhook', { headers: { 'X-NVP-Webhook-Secret': bankSecret }, body: { transactionId: 'pending-bank-1', content: 'PENDING-001', amount: 100000 } });
     assert.equal(result.response.status, 202);
     assert.equal(result.payload.reason, 'Invoice is not approved');
+  });
+
+  test('linked expenses are idempotent and reversible without deleting history', async () => {
+    const body = { sourceType: 'commission-payment', sourceId: 'commission-001', title: 'Chi hoa hồng - Đối tác A', type: 'expense', amount: 250000, category: 'commission', method: 'bank-transfer' };
+    const created = await request('/api/financial-events', { cookie: staffCookie, body });
+    assert.equal(created.response.status, 200);
+    assert.equal(created.payload.cashflowEntry.type, 'expense');
+    const duplicate = await request('/api/financial-events', { cookie: staffCookie, body });
+    assert.equal(duplicate.payload.duplicate, true);
+    const changedAmount = await request('/api/financial-events', { cookie: staffCookie, body: { ...body, amount: 300000 } });
+    assert.equal(changedAmount.response.status, 409);
+    const reversed = await request(`/api/cashflow/${created.payload.cashflowEntry.id}/reverse`, { cookie: ownerCookie, body: { reason: 'Hủy thanh toán hoa hồng' } });
+    assert.equal(reversed.response.status, 200);
+    assert.equal(reversed.payload.cashflowEntry.type, 'income');
+    const reposted = await request('/api/financial-events', { cookie: staffCookie, body: { ...body, amount: 300000 } });
+    assert.equal(reposted.response.status, 200);
+    assert.equal(reposted.payload.cashflowEntry.amount, 300000);
+    const cashflow = JSON.parse((await readState())['nvp-cashflow']);
+    assert.equal(cashflow.filter((entry) => entry.sourceId === body.sourceId).length, 2);
+    assert.equal(cashflow.filter((entry) => entry.reversalOf === created.payload.cashflowEntry.id).length, 1);
+  });
+
+  test('deposit receipt is not profit and disposition updates invoice or cash correctly', async () => {
+    const state = await readState();
+    const reservations = JSON.parse(state['nvp-reservations'] || '[]');
+    const invoices = JSON.parse(state['nvp-invoices']);
+    reservations.push(
+      { id: 'deposit-apply-001', name: 'Khách áp cọc', building: 'Tòa Test', apartment: 'P101', amount: 300000, status: 'held' },
+      { id: 'deposit-refund-001', name: 'Khách hoàn cọc', building: 'Tòa Test', apartment: 'P102', amount: 200000, status: 'held' }
+    );
+    invoices.push({ id: 'deposit-invoice-001', paymentCode: 'DEP-INV-001', title: 'Hóa đơn áp cọc', building: 'Tòa Test', apartment: 'P101', amount: 1000000, approvalStatus: 'approved', status: 'unpaid' });
+    await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-reservations': JSON.stringify(reservations), 'nvp-invoices': JSON.stringify(invoices) } } });
+    const receipt = await request('/api/financial-events', { cookie: ownerCookie, body: { sourceType: 'deposit-receipt', sourceId: 'deposit-apply-001', title: 'Thu cọc', type: 'income', amount: 300000, category: 'deposit', method: 'cash' } });
+    assert.equal(receipt.payload.cashflowEntry.affectsCash, true);
+    assert.equal(receipt.payload.cashflowEntry.affectsProfit, false);
+    const applied = await request('/api/deposits/deposit-apply-001/dispose', { cookie: ownerCookie, body: { disposition: 'applied', invoiceId: 'deposit-invoice-001' } });
+    assert.equal(applied.response.status, 200);
+    assert.equal(applied.payload.invoice.amount, 700000);
+    assert.equal(applied.payload.reservation.status, 'applied');
+    assert.equal(applied.payload.cashflowEntry.affectsCash, false);
+    assert.equal(applied.payload.cashflowEntry.affectsProfit, true);
+    const refunded = await request('/api/deposits/deposit-refund-001/dispose', { cookie: ownerCookie, body: { disposition: 'refunded', method: 'bank-transfer' } });
+    assert.equal(refunded.response.status, 200);
+    assert.equal(refunded.payload.cashflowEntry.type, 'expense');
+    assert.equal(refunded.payload.cashflowEntry.affectsProfit, false);
   });
 
   test('tenant feedback is isolated and supports owned image retrieval', async () => {

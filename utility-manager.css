@@ -65,12 +65,151 @@
   font-size: 13px;
 }
 
+.modal.payment-schedule-modal {
+  width: min(94vw, 900px);
+  max-height: min(92vh, 820px);
+}
+
+.payment-schedule-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.payment-schedule-toolbar label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.payment-schedule-toolbar input,
+.payment-schedule-toolbar select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font: 600 13px Manrope, sans-serif;
+}
+
+.payment-schedule-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.payment-schedule-summary article {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f3f8f6;
+}
+
+.payment-schedule-summary article:first-child { border-left: 4px solid #c74735; }
+.payment-schedule-summary article:last-child { border-left: 4px solid var(--brand); }
+.payment-schedule-summary span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.payment-schedule-summary strong { color: var(--ink); font-size: 20px; letter-spacing: 0; }
+.payment-schedule-summary article:first-child strong { color: #b33828; }
+.payment-schedule-summary small { color: var(--muted); font-size: 11px; }
+.payment-schedule-list { display: grid; gap: 18px; }
+.payment-schedule-group { display: grid; gap: 8px; }
+
+.payment-schedule-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+}
+
+.payment-schedule-group > header strong { font-size: 13px; }
+.payment-schedule-group > header span { color: var(--muted); font-size: 11px; }
+
+.payment-schedule-item {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.payment-schedule-item.is-overdue { border-left: 4px solid #c74735; }
+.payment-schedule-date { display: grid; justify-items: center; padding-right: 12px; border-right: 1px solid var(--line); }
+.payment-schedule-date strong { font-size: 13px; white-space: nowrap; }
+.payment-schedule-date small { color: var(--muted); font-size: 10px; }
+.payment-schedule-detail { display: grid; gap: 3px; min-width: 0; }
+.payment-schedule-detail > strong { overflow-wrap: anywhere; font-size: 13px; }
+.payment-schedule-detail span,
+.payment-schedule-detail small { overflow-wrap: anywhere; color: var(--muted); font-size: 11px; }
+.payment-schedule-item.is-overdue .payment-schedule-detail small { color: #b33828; font-weight: 700; }
+.payment-schedule-amount { font-size: 13px; white-space: nowrap; }
+.payment-schedule-actions { display: flex; gap: 6px; }
+
+.payment-schedule-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--brand);
+  font: 700 11px Manrope, sans-serif;
+  cursor: pointer;
+}
+
+.payment-schedule-actions button:last-child { border-color: var(--brand); background: var(--brand); color: #fff; }
+.dark .payment-schedule-toolbar input,
+.dark .payment-schedule-toolbar select,
+.dark .payment-schedule-summary article { background: #162c27; border-color: #2a3730; }
+.dark .payment-schedule-summary article:first-child strong,
+.dark .payment-schedule-item.is-overdue .payment-schedule-detail small { color: #ef8c7d; }
+
+.modal.finance-ledger-modal { width: min(94vw, 940px); max-height: min(92vh, 820px); }
+.cashflow-toolbar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.cashflow-toolbar label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.cashflow-toolbar input,
+.cashflow-toolbar select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: 600 12px Manrope, sans-serif; }
+.cashflow-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.cashflow-summary article { display: grid; gap: 4px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 7px; background: #f3f8f6; }
+.cashflow-summary span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.cashflow-summary strong { font-size: 17px; letter-spacing: 0; white-space: nowrap; }
+.cashflow-entry { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; cursor: default; }
+.cashflow-entry > div:first-child { display: grid; gap: 3px; min-width: 0; }
+.cashflow-value { display: grid; justify-items: end; gap: 5px; flex: none; }
+.cashflow-value button { border: 0; background: transparent; color: var(--brand); font: 700 10px Manrope, sans-serif; cursor: pointer; }
+.dark .cashflow-toolbar input,
+.dark .cashflow-toolbar select,
+.dark .cashflow-summary article { background: #162c27; border-color: #2a3730; }
+
 @media (max-width: 760px) {
   .modal.utility-modal { width: calc(100vw - 24px); }
   .utility-toolbar { grid-template-columns: 1fr 1fr; }
   .utility-toolbar button { min-height: 40px; }
   .utility-summary { grid-template-columns: 1fr; }
   .utility-summary article { min-height: 0; }
+  .modal.payment-schedule-modal { width: calc(100vw - 24px); }
+  .payment-schedule-toolbar,
+  .payment-schedule-summary { grid-template-columns: 1fr; }
+  .payment-schedule-item { grid-template-columns: 46px minmax(0, 1fr) auto; }
+  .payment-schedule-amount { grid-column: 2; }
+  .payment-schedule-actions { grid-column: 3; grid-row: 1 / span 2; flex-direction: column; }
+  .modal.finance-ledger-modal { width: calc(100vw - 24px); }
+  .cashflow-toolbar { grid-template-columns: 1fr; }
+  .cashflow-summary { grid-template-columns: 1fr; }
+  .cashflow-entry { align-items: start; }
+  .cashflow-value strong { white-space: normal; text-align: right; }
 }
 
 button {

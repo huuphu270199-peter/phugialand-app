@@ -1,4 +1,4 @@
-const staffSensitiveStorageKeys = ['nvp-cashflow', 'nvp-commissions', 'nvp-prepayments', 'nvp-deposit-ledger', 'nvp-users', 'nvp-smart-home-config'];
+const staffSensitiveStorageKeys = ['nvp-cashflow', 'nvp-commissions', 'nvp-deposit-ledger', 'nvp-users', 'nvp-smart-home-config'];
 let currentUserRole = sessionStorage.getItem('nvp-user-role') || '';
 let currentUserName = sessionStorage.getItem('nvp-user-name') || '';
 if (currentUserRole === 'staff') staffSensitiveStorageKeys.forEach((key) => localStorage.removeItem(key));
@@ -27,7 +27,6 @@ const bookingStorageKey = 'nvp-bookings';
 const locationStorageKey = 'nvp-locations';
 const meterLogStorageKey = 'nvp-meter-logs';
 const commissionStorageKey = 'nvp-commissions';
-const prepaymentStorageKey = 'nvp-prepayments';
 const depositLedgerStorageKey = 'nvp-deposit-ledger';
 const notificationStorageKey = 'nvp-notifications';
 const userStorageKey = 'nvp-users';
@@ -35,7 +34,7 @@ const feedbackStorageKey = 'nvp-feedback';
 const invoiceSettingsStorageKey = 'nvp-invoice-settings';
 const hydrationReloadKey = 'nvp-hydration-reload-pending';
 const apiBaseUrl = '/api';
-const stateKeys = [storageKey, leadStorageKey, reservationStorageKey, taskStorageKey, invoiceStorageKey, cashflowStorageKey, catalogStorageKey, customerStorageKey, bookingStorageKey, locationStorageKey, meterLogStorageKey, commissionStorageKey, prepaymentStorageKey, depositLedgerStorageKey, notificationStorageKey, userStorageKey, feedbackStorageKey, invoiceSettingsStorageKey];
+const stateKeys = [storageKey, leadStorageKey, reservationStorageKey, taskStorageKey, invoiceStorageKey, cashflowStorageKey, catalogStorageKey, customerStorageKey, bookingStorageKey, locationStorageKey, meterLogStorageKey, commissionStorageKey, depositLedgerStorageKey, notificationStorageKey, userStorageKey, feedbackStorageKey, invoiceSettingsStorageKey];
 localStorage.removeItem('nvp-contracts');
 const pendingSyncKeys = new Set();
 let syncTimeout;
@@ -166,7 +165,6 @@ const bookings = readStorage(bookingStorageKey, []);
 const locations = readStorage(locationStorageKey, []);
 const meterLogs = readStorage(meterLogStorageKey, []);
 const commissions = readStorage(commissionStorageKey, []);
-const prepayments = readStorage(prepaymentStorageKey, []);
 const depositLedger = readStorage(depositLedgerStorageKey, []);
 const notifications = readStorage(notificationStorageKey, []);
 const users = readStorage(userStorageKey, []);
@@ -345,8 +343,8 @@ function updateDashboard() {
     const amount = Object.values(invoiceTotals)[index] || 0;
     element.textContent = `${amount.toLocaleString('vi-VN')} đ　${invoiceTotal ? ((amount / invoiceTotal) * 100).toFixed(0) : 0}%`;
   });
-  const income = cashflow.filter((entry) => entry.type === 'income').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const expense = cashflow.filter((entry) => entry.type === 'expense').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const income = cashflow.filter((entry) => entry.affectsCash !== false && entry.type === 'income').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expense = cashflow.filter((entry) => entry.affectsCash !== false && entry.type === 'expense').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const chartMax = Math.max(income, expense, 1);
   document.querySelector('.chart-income')?.setAttribute('d', `M0 ${210 - (income / chartMax) * 190} L700 ${210 - (income / chartMax) * 190}`);
   document.querySelector('.chart-expense')?.setAttribute('d', `M0 ${210 - (expense / chartMax) * 190} L700 ${210 - (expense / chartMax) * 190}`);
@@ -496,7 +494,7 @@ function openBuildingForm(buildingToEdit = null) {
     <section class="form-section"><div class="form-section-title"><strong>Thông tin cơ bản</strong><label class="inline-toggle">Hoạt động<input name="active" type="checkbox" ${building.active !== false ? 'checked' : ''}><span></span></label></div><div class="form-grid"><label><span class="field-label">Tên tòa nhà <b>*</b></span><input name="name" required maxlength="80" value="${escapeHtml(building.name || '')}" placeholder="Ví dụ: Vạn Phúc Garden"></label><label>Tên viết tắt/Mã tòa <input name="code" maxlength="30" value="${escapeHtml(building.code || '')}" placeholder="Nhập mã viết tắt"></label><label>Loại hình khai thác<select name="listingType"><option value="mixed" ${!building.listingType || building.listingType === 'mixed' ? 'selected' : ''}>Nhiều loại hình trong tòa</option><option value="whole-building" ${building.listingType === 'whole-building' ? 'selected' : ''}>Tòa nhà nguyên căn</option></select></label></div></section>
     <section class="form-section"><div class="form-section-title"><strong>Thông tin địa chỉ</strong></div><div class="form-grid"><label>Tỉnh/Thành phố <b>*</b><select name="city" data-location-city required><option value="">Đang tải tỉnh/thành phố...</option></select></label><label>Xã/Phường <b>*</b><select name="ward" data-location-ward required disabled><option value="">Chọn tỉnh/thành phố trước</option></select></label><label>Khu vực <input name="area" value="${escapeHtml(settings.area || '')}" placeholder="Ví dụ: KĐT Vạn Phúc"></label><label>Địa chỉ chi tiết <b>*</b><input name="address" required value="${escapeHtml(building.address || '')}" placeholder="Số nhà, đường, khu vực"></label></div></section>
     <section class="form-section"><div class="form-section-title"><strong>Thông tin quản lý</strong></div><div class="form-grid"><label>Họ tên người quản lý<input name="managerName" maxlength="100" value="${escapeHtml(settings.managerName || '')}" placeholder="Ví dụ: Nguyễn Văn An"></label><label>Số điện thoại quản lý<input name="companyPhone" type="tel" maxlength="30" value="${escapeHtml(settings.companyPhone || '')}" placeholder="Ví dụ: 0981 444 413"></label></div></section>
-    <section class="form-section"><div class="form-section-title"><strong>Ảnh/video tòa nhà</strong></div><label>Media nguyên căn<input name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" multiple><small class="form-hint">Dùng cho trường hợp cho thuê nguyên căn. Tối đa 5 ảnh và 1 video.</small></label></section>
+    <section class="form-section"><div class="form-section-title"><strong>Ảnh/video tòa nhà</strong></div><div class="form-grid"><label class="full-field">Media nguyên căn<input name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" multiple><small class="form-hint">Dùng cho trường hợp cho thuê nguyên căn. Tối đa 5 ảnh và 1 video.</small></label></div></section>
     <section class="form-section"><div class="form-section-title"><strong>Dịch vụ tòa nhà</strong></div><div class="service-list">${serviceItems}</div><button class="service-add-button" type="button" data-service-add>＋ Thêm dịch vụ</button></section>
     <section class="form-section"><div class="form-section-title"><strong>Cấu hình thanh toán &amp; dịch vụ</strong></div><div class="form-grid"><label>Tài khoản gạch nợ tự động<select name="debtAccount"><option value="">Chọn</option><option ${settings.debtAccount === 'bank' ? 'selected' : ''} value="bank">Tài khoản ngân hàng</option><option ${settings.debtAccount === 'cash' ? 'selected' : ''} value="cash">Tài khoản tiền mặt</option></select></label><label>Ngày thanh toán hằng tháng<input name="paymentDay" type="number" min="1" max="31" value="${Number(settings.paymentDay || 5)}"></label><label>Ngân hàng nhận tiền<input name="bankName" maxlength="80" value="${escapeHtml(settings.bankName || '')}" placeholder="Ví dụ: MB Bank"></label><label>Mã BIN ngân hàng<input name="bankBin" inputmode="numeric" maxlength="12" value="${escapeHtml(settings.bankBin || '')}" placeholder="Ví dụ: 970422"></label><label>Số tài khoản<input name="bankNumber" inputmode="numeric" maxlength="30" value="${escapeHtml(settings.bankNumber || '')}" placeholder="Nhập số tài khoản"></label><label>Tên chủ tài khoản<input name="bankHolder" maxlength="100" value="${escapeHtml(settings.bankHolder || '')}" placeholder="Tên chủ tài khoản"></label><label>Đơn giá điện (đ/kWh)<input name="electricityRate" type="number" min="0" value="${Number(settings.electricityRate || 0)}"></label><label>Đơn giá nước (đ/khối)<input name="waterRate" type="number" min="0" value="${Number(settings.waterRate || 0)}"></label><label>Phí quản lý (đ/tháng)<input name="managementFee" type="number" min="0" value="${Number(settings.managementFee || 0)}"></label></div></section>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">Lưu</button></div>
@@ -1026,11 +1024,12 @@ function synchronizeRentedApartments() {
 function openCustomerForm(customerIndex = -1) {
   const customer = customerIndex >= 0 ? customers[customerIndex] : null;
   const apartmentOptions = buildings.flatMap((building) => (building.apartments || []).map((apartment) => `<option value="${escapeHtml(`${building.name} | ${apartment.name}`)}">${escapeHtml(building.name)} · ${escapeHtml(apartment.name)}</option>`)).join('');
-  openModal(customer ? 'Cập nhật khách hàng' : 'Thêm khách hàng', `<form class="building-form" data-customer-form><div class="form-grid"><label>Họ và tên <b>*</b><input name="name" required maxlength="80" value="${escapeHtml(customer?.name || '')}" placeholder="Nhập họ tên"></label><label>Email tài khoản<input name="email" type="email" maxlength="120" value="${escapeHtml(customer?.email || '')}" placeholder="Email đăng nhập người thuê"></label><label>Mã khách hàng<input name="code" maxlength="30" value="${escapeHtml(customer?.code || '')}" placeholder="Tự động nếu bỏ trống"></label><label>Số điện thoại <b>*</b><input name="phone" required pattern="[0-9 +()-]{8,}" value="${escapeHtml(customer?.phone || '')}" placeholder="09xx xxx xxx"></label><label>CMND/CCCD/Hộ chiếu<input name="identity" maxlength="30" value="${escapeHtml(customer?.identity || '')}" placeholder="Số giấy tờ"></label><label>Ngày sinh<input name="birthDate" type="date" value="${escapeHtml(customer?.birthDate || '')}"></label><label>Loại khách<select name="type"><option value="personal" ${customer?.type === 'personal' ? 'selected' : ''}>Cá nhân</option><option value="business" ${customer?.type === 'business' ? 'selected' : ''}>Doanh nghiệp</option><option value="foreign" ${customer?.type === 'foreign' ? 'selected' : ''}>Khách nước ngoài</option></select></label><label>Căn hộ đang ở<select name="apartment"><option value="">Chưa xác định</option>${apartmentOptions}</select></label><label>Trạng thái<select name="status"><option value="renting" ${customer?.status === 'renting' ? 'selected' : ''}>Đang thuê</option><option value="moved" ${customer?.status === 'moved' ? 'selected' : ''}>Đã chuyển đi</option><option value="visitor" ${customer?.status === 'visitor' ? 'selected' : ''}>Khách vãng lai</option></select></label><label class="full-field">Địa chỉ<textarea name="address" placeholder="Địa chỉ liên hệ">${escapeHtml(customer?.address || '')}</textarea></label></div><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">${customer ? 'Cập nhật khách hàng' : 'Lưu khách hàng'}</button></div></form>`, () => {
+  openModal(customer ? 'Cập nhật khách hàng' : 'Thêm khách hàng', `<form class="building-form" data-customer-form><div class="form-grid"><label><span class="field-label">Họ và tên <b>*</b></span><input name="name" required maxlength="80" value="${escapeHtml(customer?.name || '')}" placeholder="Nhập họ tên"></label><label>Email tài khoản<input name="email" type="email" maxlength="120" value="${escapeHtml(customer?.email || '')}" placeholder="Email đăng nhập người thuê"></label><label>Mã khách hàng<input name="code" maxlength="30" value="${escapeHtml(customer?.code || '')}" placeholder="Tự động nếu bỏ trống"></label><label><span class="field-label">Số điện thoại <b>*</b></span><input name="phone" required pattern="[0-9 +()-]{8,}" value="${escapeHtml(customer?.phone || '')}" placeholder="09xx xxx xxx"></label><label>Số CCCD/Hộ chiếu<input name="identity" maxlength="30" value="${escapeHtml(customer?.identity || '')}" placeholder="Có thể để trống"></label><label>Ảnh/PDF CCCD hoặc hộ chiếu<input name="identityFile" type="file" accept="image/*,.pdf"><small class="form-hint">Không bắt buộc. Tệp tối đa 700 KB${customer?.documentName ? `; hiện có: ${escapeHtml(customer.documentName)}` : ''}.</small></label><label>Ngày sinh<input name="birthDate" type="date" value="${escapeHtml(customer?.birthDate || '')}"></label><label>Loại khách<select name="type"><option value="personal" ${customer?.type === 'personal' ? 'selected' : ''}>Cá nhân</option><option value="business" ${customer?.type === 'business' ? 'selected' : ''}>Doanh nghiệp</option><option value="foreign" ${customer?.type === 'foreign' ? 'selected' : ''}>Khách nước ngoài</option></select></label><label>Căn hộ đang ở<select name="apartment"><option value="">Chưa xác định</option>${apartmentOptions}</select></label><label>Trạng thái<select name="status"><option value="renting" ${customer?.status === 'renting' ? 'selected' : ''}>Đang thuê</option><option value="moved" ${customer?.status === 'moved' ? 'selected' : ''}>Đã chuyển đi</option><option value="visitor" ${customer?.status === 'visitor' ? 'selected' : ''}>Khách vãng lai</option></select></label><label class="full-field">Địa chỉ<textarea name="address" placeholder="Địa chỉ liên hệ">${escapeHtml(customer?.address || '')}</textarea></label></div><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">${customer ? 'Cập nhật khách hàng' : 'Lưu khách hàng'}</button></div></form>`, () => {
+    document.querySelector('[data-modal]').classList.add('customer-form-modal');
     modalCloseAction = openCustomerManager;
     const apartmentSelect = document.querySelector('[data-customer-form] [name="apartment"]');
     apartmentSelect.value = customer?.apartment ? `${customer.building || buildings.find((building) => (building.apartments || []).some((apartment) => apartment.name === customer.apartment))?.name || ''} | ${customer.apartment}` : '';
-    apartmentSelect.closest('label').insertAdjacentHTML('afterend', '<label>Chỉ số điện bàn giao (kWh)<input name="initialElectricityReading" type="number" min="0" step="0.01" value="0"><small class="form-hint" data-electricity-handover-status>Chọn căn để lấy chỉ số Tuya hiện tại.</small></label><label>Chỉ số nước bàn giao (m³)<input name="initialWaterReading" type="number" min="0" step="0.01" value="0"><small class="form-hint">Nhập số đang hiển thị trên đồng hồ nước.</small></label>');
+    document.querySelector('[data-customer-form] [name="status"]').closest('label').insertAdjacentHTML('afterend', '<label>Chỉ số điện bàn giao (kWh)<input name="initialElectricityReading" type="number" min="0" step="0.01" value="0"><small class="form-hint" data-electricity-handover-status>Chọn căn để lấy chỉ số Tuya hiện tại.</small></label><label>Chỉ số nước bàn giao (m³)<input name="initialWaterReading" type="number" min="0" step="0.01" value="0"><small class="form-hint">Nhập số đang hiển thị trên đồng hồ nước.</small></label>');
     const customerForm = document.querySelector('[data-customer-form]');
     let currentReadings = new Map();
     const updateHandoverReadings = () => {
@@ -1055,7 +1054,18 @@ function openCustomerForm(customerIndex = -1) {
       const form = new FormData(event.currentTarget);
       const selectedApartment = apartmentReference(form.get('apartment'));
       const previousApartment = customer ? { building: customer.building || '', apartment: customer.apartment || '', status: customer.status } : null;
-      const nextCustomer = { id: customer?.id || crypto.randomUUID(), ...customer, name: form.get('name').trim(), email: form.get('email').trim().toLowerCase(), code: form.get('code').trim() || customer?.code || `KH${String(customers.length + 1).padStart(6, '0')}`, phone: form.get('phone').trim(), identity: form.get('identity').trim(), birthDate: form.get('birthDate'), type: form.get('type'), building: selectedApartment.building, apartment: selectedApartment.apartment, status: form.get('status'), address: form.get('address').trim(), createdAt: customer?.createdAt || new Date().toISOString() };
+      const identityFile = form.get('identityFile');
+      const submitButton = event.currentTarget.querySelector('[type="submit"]');
+      submitButton.disabled = true;
+      let document = { documentName: customer?.documentName || '', documentUrl: customer?.documentUrl || '' };
+      try {
+        if (identityFile?.size) document = await uploadBookingDocument(identityFile);
+      } catch (error) {
+        submitButton.disabled = false;
+        showToast(error.message);
+        return;
+      }
+      const nextCustomer = { id: customer?.id || crypto.randomUUID(), ...customer, ...document, name: form.get('name').trim(), email: form.get('email').trim().toLowerCase(), code: form.get('code').trim() || customer?.code || `KH${String(customers.length + 1).padStart(6, '0')}`, phone: form.get('phone').trim(), identity: form.get('identity').trim(), birthDate: form.get('birthDate'), type: form.get('type'), building: selectedApartment.building, apartment: selectedApartment.apartment, status: form.get('status'), address: form.get('address').trim(), createdAt: customer?.createdAt || new Date().toISOString() };
       const startingTenancy = nextCustomer.status === 'renting' && nextCustomer.apartment && (!previousApartment || previousApartment.status !== 'renting' || previousApartment.building !== nextCustomer.building || previousApartment.apartment !== nextCustomer.apartment);
       const targetApartment = buildings.find((building) => building.name === nextCustomer.building)?.apartments?.find((item) => item.name === nextCustomer.apartment);
       const handoverReadings = { electricity: Number(form.get('initialElectricityReading') || 0), water: Number(form.get('initialWaterReading') || 0) };
@@ -1084,7 +1094,7 @@ function openCustomerDetails(customerIndex) {
   const relatedInvoices = invoices.filter((invoice) => invoice.approvalStatus !== 'pending' && invoice.status !== 'paid' && (invoice.tenantEmail === customer.email || (invoice.apartment === customer.apartment && invoice.building === building?.name)));
   const outstanding = relatedInvoices.reduce((total, invoice) => total + Number(invoice.amount || 0), 0);
   const invoicesHtml = relatedInvoices.length ? relatedInvoices.map((invoice) => `<li>${escapeHtml(invoice.title)} · ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ${invoice.dueDate ? ` · hạn ${escapeHtml(invoice.dueDate)}` : ''}</li>`).join('') : '<li>Không có hóa đơn chưa thanh toán.</li>';
-  openModal(`Hồ sơ khách hàng · ${customer.name}`, `<div class="entity-summary customer-detail-summary"><strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.code || 'Chưa có mã')} · ${escapeHtml(statusLabels[customer.status] || 'Chưa xác định')}</span></div><div class="customer-detail-grid"><div><small>Số điện thoại</small><strong>${escapeHtml(customer.phone || 'Chưa cập nhật')}</strong></div><div><small>Email</small><strong>${escapeHtml(customer.email || 'Chưa cập nhật')}</strong></div><div><small>Loại khách</small><strong>${escapeHtml(typeLabels[customer.type] || 'Cá nhân')}</strong></div><div><small>CMND/CCCD/Hộ chiếu</small><strong>${escapeHtml(customer.identity || 'Chưa cập nhật')}</strong></div><div><small>Tòa nhà</small><strong>${escapeHtml(building?.name || customer.building || 'Chưa xác định')}</strong></div><div><small>Căn hộ/Văn phòng</small><strong>${escapeHtml(customer.apartment || 'Chưa xác định')}</strong></div><div class="full"><small>Địa chỉ liên hệ</small><strong>${escapeHtml(customer.address || 'Chưa cập nhật')}</strong></div></div><div class="entity-summary customer-detail-balance"><span>Hóa đơn chưa thanh toán</span><strong>${outstanding.toLocaleString('vi-VN')} đ</strong></div><section class="customer-detail-section"><h3>Hóa đơn chưa thanh toán</h3><ul>${invoicesHtml}</ul></section><div class="form-actions"><button class="modal-secondary" type="button" data-customer-detail-close>Quay lại danh sách</button><button class="primary-button" type="button" data-customer-detail-edit>Sửa hồ sơ</button></div>`, () => {
+  openModal(`Hồ sơ khách hàng · ${customer.name}`, `<div class="entity-summary customer-detail-summary"><strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.code || 'Chưa có mã')} · ${escapeHtml(statusLabels[customer.status] || 'Chưa xác định')}</span></div><div class="customer-detail-grid"><div><small>Số điện thoại</small><strong>${escapeHtml(customer.phone || 'Chưa cập nhật')}</strong></div><div><small>Email</small><strong>${escapeHtml(customer.email || 'Chưa cập nhật')}</strong></div><div><small>Loại khách</small><strong>${escapeHtml(typeLabels[customer.type] || 'Cá nhân')}</strong></div><div><small>Số CCCD/Hộ chiếu</small><strong>${escapeHtml(customer.identity || 'Không cung cấp')}</strong></div><div><small>Tệp CCCD/Hộ chiếu</small><strong>${customer.documentUrl ? `<a href="${escapeHtml(customer.documentUrl)}" target="_blank" rel="noopener">${escapeHtml(customer.documentName || 'Xem giấy tờ')}</a>` : 'Không cung cấp'}</strong></div><div><small>Tòa nhà</small><strong>${escapeHtml(building?.name || customer.building || 'Chưa xác định')}</strong></div><div><small>Căn hộ/Văn phòng</small><strong>${escapeHtml(customer.apartment || 'Chưa xác định')}</strong></div><div class="full"><small>Địa chỉ liên hệ</small><strong>${escapeHtml(customer.address || 'Chưa cập nhật')}</strong></div></div><div class="entity-summary customer-detail-balance"><span>Hóa đơn chưa thanh toán</span><strong>${outstanding.toLocaleString('vi-VN')} đ</strong></div><section class="customer-detail-section"><h3>Hóa đơn chưa thanh toán</h3><ul>${invoicesHtml}</ul></section><div class="form-actions"><button class="modal-secondary" type="button" data-customer-detail-close>Quay lại danh sách</button><button class="primary-button" type="button" data-customer-detail-edit>Sửa hồ sơ</button></div>`, () => {
     modalCloseAction = openCustomerManager;
     document.querySelector('[data-customer-detail-close]').addEventListener('click', closeModal);
     document.querySelector('[data-customer-detail-edit]').addEventListener('click', () => openCustomerForm(customerIndex));
@@ -1094,7 +1104,7 @@ function openCustomerDetails(customerIndex) {
 function openCustomerManager() {
   const renderRows = (query = '', status = 'renting') => {
     const filtered = customers.filter((customer) => customer.status === status && `${customer.name} ${customer.code} ${customer.identity} ${customer.apartment}`.toLowerCase().includes(query.toLowerCase()));
-    return filtered.length ? filtered.map((customer) => `<tr><td><input type="checkbox"></td><td><strong class="building-code">${escapeHtml(customer.code)}</strong></td><td><div class="table-actions customer-table-actions"><button type="button" data-customer-view="${customers.indexOf(customer)}" aria-label="Xem thông tin khách">Xem</button><button type="button" data-customer-edit="${customers.indexOf(customer)}" aria-label="Sửa thông tin khách">Sửa</button><button type="button" class="danger-action" data-customer-delete="${customers.indexOf(customer)}" aria-label="Xóa khách" ${customer.status === 'renting' ? 'disabled title="Khách đang thuê không thể xóa"' : ''}>Xóa</button></div></td><td><button type="button" class="customer-name-link" data-customer-view="${customers.indexOf(customer)}">${escapeHtml(customer.name)}</button><small class="table-muted">${escapeHtml(customer.type === 'business' ? 'Doanh nghiệp' : customer.type === 'foreign' ? 'Khách nước ngoài' : 'Cá nhân')}</small></td><td>${escapeHtml(customer.apartment || 'Chưa xác định')}</td><td>${escapeHtml(customer.identity || 'Chưa cập nhật')}</td><td>${escapeHtml(customer.birthDate || 'Chưa cập nhật')}</td><td>${escapeHtml(customer.address || 'Chưa cập nhật')}</td></tr>`).join('') : '<tr><td colspan="8" class="table-empty">Không có dữ liệu nào để hiển thị</td></tr>';
+    return filtered.length ? filtered.map((customer) => `<tr><td><input type="checkbox"></td><td><strong class="building-code">${escapeHtml(customer.code)}</strong></td><td><div class="table-actions customer-table-actions"><button type="button" data-customer-view="${customers.indexOf(customer)}" aria-label="Xem thông tin khách">Xem</button><button type="button" data-customer-edit="${customers.indexOf(customer)}" aria-label="Sửa thông tin khách">Sửa</button><button type="button" class="danger-action" data-customer-delete="${customers.indexOf(customer)}" aria-label="Xóa khách" ${customer.status === 'renting' ? 'disabled title="Khách đang thuê không thể xóa"' : ''}>Xóa</button></div></td><td><button type="button" class="customer-name-link" data-customer-view="${customers.indexOf(customer)}">${escapeHtml(customer.name)}</button><small class="table-muted">${escapeHtml(customer.type === 'business' ? 'Doanh nghiệp' : customer.type === 'foreign' ? 'Khách nước ngoài' : 'Cá nhân')}</small></td><td>${escapeHtml(customer.apartment || 'Chưa xác định')}</td><td>${escapeHtml(customer.identity || 'Không cung cấp')}</td><td>${escapeHtml(customer.birthDate || 'Chưa cập nhật')}</td><td>${escapeHtml(customer.address || 'Chưa cập nhật')}</td></tr>`).join('') : '<tr><td colspan="8" class="table-empty">Không có dữ liệu nào để hiển thị</td></tr>';
   };
   const count = (status) => customers.filter((customer) => customer.status === status).length;
   openModal('Khách hàng', `<div class="customer-manager" data-customer-manager><div class="customer-tabs"><button class="active" data-customer-tab="renting">♙　Đang thuê</button><button data-customer-tab="moved">♙　Đã chuyển đi</button><button data-customer-tab="visitor">♙　Khách vãng lai</button></div><div class="manager-stat-grid customer-stat-grid"><div class="manager-stat blue"><span>♧</span><strong>${customers.length}</strong><small>Tất cả</small></div><div class="manager-stat green"><span>♙</span><strong>${customers.filter((customer) => customer.type === 'personal').length}</strong><small>Cá nhân</small></div><div class="manager-stat orange"><span>▣</span><strong>${customers.filter((customer) => customer.type === 'business').length}</strong><small>Doanh nghiệp</small></div><div class="manager-stat red"><span>◎</span><strong>${customers.filter((customer) => customer.type === 'foreign').length}</strong><small>Khách nước ngoài</small></div></div><div class="customer-toolbar"><select><option>Chọn khu vực</option></select><select><option>Chọn tòa nhà</option>${buildings.map((building) => `<option>${escapeHtml(building.name)}</option>`).join('')}</select><select disabled><option>Chọn phòng</option></select><select disabled><option>Chọn giường</option></select></div><div class="manager-toolbar"><input type="search" placeholder="⌕  Tìm kiếm" data-customer-search><button class="primary-button" type="button" data-customer-add>＋</button></div><div class="table-scroll"><table class="building-table customer-table"><thead><tr><th><input type="checkbox"></th><th>Mã KH</th><th>Thao tác</th><th>Khách hàng ↕</th><th>Căn hộ đang ở</th><th>CMND/CCCD/Hộ chiếu ↕</th><th>Ngày sinh ↕</th><th>Địa chỉ ↕</th></tr></thead><tbody data-customer-rows>${renderRows()}</tbody></table></div><div class="manager-footer"><span>Số bản ghi</span><select><option>10</option><option>25</option></select><span data-customer-result>${count('renting') ? `1 - ${count('renting')} trên tổng số ${count('renting')} bản ghi` : '1 - 0 trên tổng số 0 bản ghi'}</span></div><div class="faq"><h3>Câu hỏi thường gặp</h3><details><summary>Khách hàng có ứng dụng cư dân không?</summary><p>Khách thuê có thể sử dụng ứng dụng cư dân để xem hóa đơn và thông báo.</p></details><details><summary>Khách hàng sử dụng app cư dân có mất phí không?</summary><p>Chính sách phí phụ thuộc cấu hình của chủ nhà và tòa nhà.</p></details></div></div>`, () => {
@@ -1112,35 +1122,91 @@ function openCustomerManager() {
 }
 
 function openWorkflowForm() {
-  const apartmentOptions = (buildings[selectedBuildingIndex]?.apartments || []).map((apartment) => `<option value="${escapeHtml(apartment.name)}">${escapeHtml(apartment.name)}</option>`).join('');
+  const apartmentOptions = buildings.flatMap((building) => (building.apartments || []).map((apartment) => `<option value="${escapeHtml(`${building.name} | ${apartment.name}`)}">${escapeHtml(building.name)} · ${escapeHtml(apartment.name)}</option>`)).join('');
+  const customerOptions = customers.map((customer) => `<option value="${escapeHtml(customer.id || '')}">${escapeHtml(customer.name)}${customer.phone ? ` · ${escapeHtml(customer.phone)}` : ''}</option>`).join('');
   openModal('Thêm đặt cọc', `<form class="building-form" data-workflow-form>
+    <label>Hồ sơ khách hàng<select name="customerId"><option value="">Nhập khách chưa có hồ sơ</option>${customerOptions}</select></label>
     <label>Khách hàng<input name="name" required maxlength="80" placeholder="Họ và tên"></label>
     <label>Số điện thoại<input name="phone" required pattern="[0-9 +()-]{8,}" placeholder="09xx xxx xxx"></label>
     <label>Căn hộ<select name="apartment"><option value="">Chưa xác định</option>${apartmentOptions}</select></label>
-    <label>Tiền đặt cọc<input name="amount" type="number" min="0" value="0"></label>
+    <label>Tiền đặt cọc<input name="amount" inputmode="numeric" value="0"></label>
+    <label>Phương thức nhận cọc<select name="method"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu đặt cọc</button></div>
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
-    document.querySelector('[data-workflow-form]').addEventListener('submit', (event) => {
+    const formElement = document.querySelector('[data-workflow-form]');
+    setupMoneyInputs(formElement);
+    formElement.elements.customerId.addEventListener('change', () => {
+      const customer = customers.find((item) => item.id === formElement.elements.customerId.value);
+      if (!customer) return;
+      formElement.elements.name.value = customer.name || '';
+      formElement.elements.phone.value = customer.phone || '';
+      if (customer.apartment) formElement.elements.apartment.value = `${customer.building || ''} | ${customer.apartment}`;
+    });
+    formElement.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      const apartment = form.get('apartment');
-      reservations.push({ name: form.get('name').trim(), phone: form.get('phone').trim(), apartment, amount: parseMoney(form.get('amount')), status: 'active', createdAt: new Date().toISOString() });
-      persistCollection(reservationStorageKey, reservations);
-      if (apartment) setApartmentStatus(apartment, 'reserved');
-      updateDashboard();
-      closeModal();
-      showToast('Đã thêm đặt cọc mới');
+      const submitButton = formElement.querySelector('[type="submit"]');
+      submitButton.disabled = true;
+      const form = new FormData(formElement);
+      const reference = apartmentReference(form.get('apartment'));
+      const customer = customers.find((item) => item.id === form.get('customerId'));
+      const reservation = { id: crypto.randomUUID(), customerId: customer?.id || '', tenantEmail: customer?.email || '', name: form.get('name').trim(), phone: form.get('phone').trim(), building: reference.building, apartment: reference.apartment, amount: parseMoney(form.get('amount')), paymentMethod: form.get('method'), status: 'held', createdAt: new Date().toISOString() };
+      try {
+        if (reservation.amount > 0) await postFinancialEvent({ sourceType: 'deposit-receipt', sourceId: reservation.id, title: `Thu tiền cọc - ${reservation.name}`, type: 'income', amount: reservation.amount, category: 'deposit', method: reservation.paymentMethod, building: reservation.building, apartment: reservation.apartment });
+        reservations.push(reservation);
+        persistCollection(reservationStorageKey, reservations);
+        if (reservation.apartment) setApartmentStatus(reservation.apartment, 'reserved', reservation.building);
+        updateDashboard();
+        closeModal();
+        showToast('Đã nhận cọc và đồng bộ Sổ thu chi');
+      } catch (error) { submitButton.disabled = false; showToast(error.message); }
+    });
+  });
+}
+
+function openDepositDispositionForm(reservationIndex) {
+  const reservation = reservations[reservationIndex];
+  if (!reservation || !['active', 'held'].includes(reservation.status) || currentUserRole !== 'owner') return;
+  const eligibleInvoices = invoices.filter((invoice) => invoice.approvalStatus === 'approved' && invoice.status !== 'paid' && (reservation.tenantEmail && invoice.tenantEmail === reservation.tenantEmail || invoice.building === reservation.building && invoice.apartment === reservation.apartment));
+  openModal('Xử lý tiền cọc', `<form class="building-form" data-deposit-disposition-form><div class="entity-summary">${escapeHtml(reservation.name)} · <strong>${Number(reservation.amount || 0).toLocaleString('vi-VN')} đ</strong></div><label>Hình thức xử lý<select name="disposition"><option value="refunded">Hoàn lại khách</option><option value="applied" ${eligibleInvoices.length ? '' : 'disabled'}>Khấu trừ hóa đơn</option><option value="forfeited">Ghi nhận cọc giữ lại</option></select></label><label data-deposit-invoice hidden>Hóa đơn<select name="invoiceId">${eligibleInvoices.map((invoice) => `<option value="${escapeHtml(invoice.id)}">${escapeHtml(invoice.title)} · ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ</option>`).join('')}</select></label><label data-deposit-method>Phương thức hoàn<select name="method"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label><label>Ghi chú<textarea name="note" maxlength="300"></textarea></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Xác nhận xử lý</button></div></form>`, () => {
+    const formElement = document.querySelector('[data-deposit-disposition-form]');
+    const updateFields = () => {
+      formElement.querySelector('[data-deposit-invoice]').hidden = formElement.elements.disposition.value !== 'applied';
+      formElement.querySelector('[data-deposit-method]').hidden = formElement.elements.disposition.value !== 'refunded';
+    };
+    formElement.elements.disposition.addEventListener('change', updateFields);
+    document.querySelector('[data-modal-cancel]').addEventListener('click', openWorkflowManager);
+    updateFields();
+    formElement.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const submitButton = formElement.querySelector('[type="submit"]');
+      submitButton.disabled = true;
+      const form = new FormData(formElement);
+      try {
+        const response = await fetch(`${apiBaseUrl}/deposits/${encodeURIComponent(reservation.id)}/dispose`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ disposition: form.get('disposition'), invoiceId: form.get('invoiceId'), method: form.get('method'), note: form.get('note').trim() }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Không thể xử lý tiền cọc');
+        reservations[reservationIndex] = payload.reservation;
+        localStorage.setItem(reservationStorageKey, JSON.stringify(reservations));
+        mergeFinancialResponse(payload);
+        openWorkflowManager();
+        showToast('Đã xử lý tiền cọc và cập nhật tài chính');
+      } catch (error) { submitButton.disabled = false; showToast(error.message); }
     });
   });
 }
 
 function openWorkflowManager() {
+  let addedIds = false;
+  reservations.forEach((record) => { if (!record.id) { record.id = crypto.randomUUID(); addedIds = true; } });
+  if (addedIds) persistCollection(reservationStorageKey, reservations);
+  const statusLabels = { active: 'Đang giữ', held: 'Đang giữ', completed: 'Đã kết thúc', refunded: 'Đã hoàn', forfeited: 'Đã giữ lại', applied: 'Đã khấu trừ' };
   const items = reservations.length
-    ? reservations.map((record) => `<article class="modal-option"><div><span>${escapeHtml(record.name)}</span><small>${escapeHtml(record.phone)} · ${escapeHtml(record.apartment || 'Chưa xác định')} · ${Number(record.amount).toLocaleString('vi-VN')} đ · ${record.status === 'completed' ? 'Đã kết thúc' : 'Đang hiệu lực'}</small></div></article>`).join('')
+    ? reservations.map((record, index) => `<article class="modal-option"><div><span>${escapeHtml(record.name)}</span><small>${escapeHtml(record.phone || 'Chưa có SĐT')} · ${escapeHtml([record.building, record.apartment].filter(Boolean).join(' · ') || 'Chưa xác định')} · ${Number(record.amount).toLocaleString('vi-VN')} đ · ${statusLabels[record.status] || 'Đang giữ'}</small></div>${currentUserRole === 'owner' && ['active', 'held'].includes(record.status) ? `<div class="catalog-actions"><button type="button" data-deposit-dispose="${index}">Xử lý cọc</button></div>` : ''}</article>`).join('')
     : '<p class="empty-state">Chưa có đặt cọc nào.</p>';
   openModal('Đặt cọc thuê', `<div class="entity-summary">Tổng số: <strong>${reservations.length}</strong></div><div class="modal-list">${items}</div><button class="modal-secondary" type="button" data-modal-add-workflow>＋ Thêm đặt cọc</button>`, () => {
     document.querySelector('[data-modal-add-workflow]').addEventListener('click', openWorkflowForm);
+    document.querySelectorAll('[data-deposit-dispose]').forEach((button) => button.addEventListener('click', () => openDepositDispositionForm(Number(button.dataset.depositDispose))));
   });
 }
 
@@ -1213,10 +1279,16 @@ function synchronizeBooking(booking, previousBooking = null) {
   const customer = { ...(customers[customerIndex] || {}), id: customers[customerIndex]?.id || crypto.randomUUID(), sourceBookingId: booking.id, name: booking.name, phone: booking.phone, building: buildingName, apartment: apartmentName, status: 'visitor', type: 'personal', createdAt: customers[customerIndex]?.createdAt || booking.createdAt };
   if (customerIndex >= 0) customers[customerIndex] = customer; else customers.push(customer);
   const reservationIndex = reservations.findIndex((reservation) => reservation.sourceBookingId === booking.id);
-  const reservation = { ...(reservations[reservationIndex] || {}), sourceBookingId: booking.id, name: booking.name, phone: booking.phone, apartment: booking.apartment, amount: booking.deposit, status: booking.status === 'checkedOut' ? 'completed' : 'active', createdAt: reservations[reservationIndex]?.createdAt || booking.createdAt };
+  const reservation = { ...(reservations[reservationIndex] || {}), id: reservations[reservationIndex]?.id || crypto.randomUUID(), sourceBookingId: booking.id, name: booking.name, phone: booking.phone, building: buildingName, apartment: apartmentName, amount: booking.deposit, paymentMethod: booking.depositMethod || 'cash', status: booking.status === 'checkedOut' ? 'applied' : 'held', createdAt: reservations[reservationIndex]?.createdAt || booking.createdAt };
   if (booking.deposit > 0 && reservationIndex >= 0) reservations[reservationIndex] = reservation;
   else if (booking.deposit > 0) reservations.push(reservation);
   else if (reservationIndex >= 0) reservations.splice(reservationIndex, 1);
+  if (booking.deposit > 0) {
+    const event = booking.status === 'checkedOut'
+      ? { sourceType: 'deposit-apply', sourceId: reservation.id, title: `Khấu trừ cọc booking - ${booking.name}`, type: 'income', amount: booking.deposit, category: 'deposit', method: 'other', building: buildingName, apartment: apartmentName }
+      : { sourceType: 'deposit-receipt', sourceId: reservation.id, title: `Thu cọc booking - ${booking.name}`, type: 'income', amount: booking.deposit, category: 'deposit', method: reservation.paymentMethod, building: buildingName, apartment: apartmentName };
+    postFinancialEvent(event).catch((error) => showToast(error.message));
+  }
   const invoiceIndex = invoices.findIndex((invoice) => invoice.sourceBookingId === booking.id);
   const totalCharge = Number(booking.amount || 0) + Number(booking.serviceFee || 0);
   const balance = Math.max(totalCharge - Number(booking.deposit || 0), 0);
@@ -1256,12 +1328,14 @@ function openBookingForm(bookingIndex = -1) {
   openModal(booking ? 'Sửa booking' : 'Tạo booking', `<form class="building-form" data-booking-form>
     <label>Khách lưu trú<input name="name" required maxlength="80" value="${escapeHtml(booking?.name || '')}" placeholder="Họ và tên khách"></label>
     <label>Số điện thoại<input name="phone" required pattern="[0-9 +()-]{8,}" value="${escapeHtml(booking?.phone || '')}" placeholder="09xx xxx xxx"></label>
-    <label>Căn hộ/giường<select name="apartment" required><option value="">Chọn căn hộ</option>${apartmentOptions}</select></label>
+    <label>Căn hộ/Homestay<select name="apartment" required><option value="">Chọn căn hộ hoặc Homestay</option>${apartmentOptions}</select></label>
     <label>Nhận phòng<input name="checkIn" type="datetime-local" required value="${checkIn}"></label>
     <label>Trả phòng<input name="checkOut" type="datetime-local" required value="${checkOut}"></label>
     <label>Tiền phòng<input name="amount" type="number" min="0" required value="${Number(booking?.amount || 0)}"></label>
     <label>Đã đặt cọc<input name="deposit" type="number" min="0" required value="${Number(booking?.deposit || 0)}"></label>
-    <label>CCCD/Hộ chiếu<input name="identityFile" type="file" accept="image/*,.pdf"></label>
+    <label>Phương thức nhận cọc<select name="depositMethod"><option value="bank-transfer" ${booking?.depositMethod === 'bank-transfer' ? 'selected' : ''}>Chuyển khoản</option><option value="cash" ${!booking?.depositMethod || booking?.depositMethod === 'cash' ? 'selected' : ''}>Tiền mặt</option><option value="other" ${booking?.depositMethod === 'other' ? 'selected' : ''}>Khác</option></select></label>
+    <label>Số CCCD/Hộ chiếu<input name="identity" maxlength="30" value="${escapeHtml(booking?.identity || '')}" placeholder="Có thể để trống"></label>
+    <label>Ảnh/PDF CCCD hoặc hộ chiếu<input name="identityFile" type="file" accept="image/*,.pdf"><small class="form-hint">Không bắt buộc. Tệp tối đa 700 KB${booking?.documentName ? `; hiện có: ${escapeHtml(booking.documentName)}` : ''}.</small></label>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">${booking ? 'Cập nhật booking' : 'Tạo booking'}</button></div>
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
@@ -1282,7 +1356,7 @@ function openBookingForm(bookingIndex = -1) {
         return;
       }
       const previousBooking = booking ? { ...booking, syncedDates: [...(booking.syncedDates || [])] } : null;
-      const nextBooking = { ...booking, id: booking?.id || crypto.randomUUID(), name: form.get('name').trim(), phone: form.get('phone').trim(), apartment: form.get('apartment'), checkIn: form.get('checkIn'), checkOut: form.get('checkOut'), amount: parseMoney(form.get('amount')), deposit: parseMoney(form.get('deposit')), ...document, status: booking?.status || 'booked', createdAt: booking?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const nextBooking = { ...booking, id: booking?.id || crypto.randomUUID(), name: form.get('name').trim(), phone: form.get('phone').trim(), identity: form.get('identity').trim(), apartment: form.get('apartment'), checkIn: form.get('checkIn'), checkOut: form.get('checkOut'), amount: parseMoney(form.get('amount')), deposit: parseMoney(form.get('deposit')), depositMethod: form.get('depositMethod'), ...document, status: booking?.status || 'booked', createdAt: booking?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
       if (new Date(nextBooking.checkOut) <= new Date(nextBooking.checkIn)) { submitButton.disabled = false; submitButton.textContent = booking ? 'Cập nhật booking' : 'Tạo booking'; showToast('Thời gian trả phòng phải sau thời gian nhận phòng'); return; }
       if (bookingIndex >= 0) bookings[bookingIndex] = nextBooking; else bookings.push(nextBooking);
       synchronizeBooking(nextBooking, previousBooking);
@@ -1342,7 +1416,7 @@ function openBookingManager() {
     persistCollection(bookingStorageKey, bookings);
   }
   const labels = { booked: 'Đã đặt', checkedIn: 'Đang ở', checkedOut: 'Đã trả phòng' };
-  const items = bookings.length ? bookings.map((booking, index) => `<article class="modal-option"><div><span>${escapeHtml(booking.name)} <small>(${labels[booking.status]})</small></span><small>${escapeHtml(booking.apartment)} · ${formatDateTime(booking.checkIn)} - ${formatDateTime(booking.checkOut)}${booking.serviceFee ? ` · Phí dịch vụ ${Number(booking.serviceFee).toLocaleString('vi-VN')} đ` : ''}${booking.documentName ? ` · <a href="${escapeHtml(booking.documentUrl)}" target="_blank" rel="noopener">${escapeHtml(booking.documentName)}</a>` : ''}</small></div><div class="catalog-actions"><button type="button" data-booking-edit="${index}">Sửa</button>${booking.status !== 'checkedOut' ? `<button type="button" data-booking-status="${index}">${booking.status === 'booked' ? 'Nhận phòng' : 'Trả phòng'}</button>` : ''}</div></article>`).join('') : '<p class="empty-state">Chưa có booking nào.</p>';
+  const items = bookings.length ? bookings.map((booking, index) => `<article class="modal-option"><div><span>${escapeHtml(booking.name)} <small>(${labels[booking.status]})</small></span><small>${escapeHtml(booking.apartment)} · ${formatDateTime(booking.checkIn)} - ${formatDateTime(booking.checkOut)}${booking.serviceFee ? ` · Phí dịch vụ ${Number(booking.serviceFee).toLocaleString('vi-VN')} đ` : ''}${booking.identity ? ` · CCCD/Hộ chiếu: ${escapeHtml(booking.identity)}` : ''}${booking.documentName ? ` · <a href="${escapeHtml(booking.documentUrl)}" target="_blank" rel="noopener">${escapeHtml(booking.documentName)}</a>` : ''}</small></div><div class="catalog-actions"><button type="button" data-booking-edit="${index}">Sửa</button>${booking.status !== 'checkedOut' ? `<button type="button" data-booking-status="${index}">${booking.status === 'booked' ? 'Nhận phòng' : 'Trả phòng'}</button>` : ''}</div></article>`).join('') : '<p class="empty-state">Chưa có booking nào.</p>';
   openModal('Đặt phòng ngắn hạn', `<div class="entity-summary">Lịch đặt phòng và lưu trú ngắn hạn</div><div class="modal-list">${items}</div><button class="modal-secondary" type="button" data-modal-add-booking>＋ Tạo booking</button>`, () => {
     document.querySelector('[data-modal-add-booking]').addEventListener('click', openBookingForm);
     document.querySelectorAll('[data-booking-edit]').forEach((button) => button.addEventListener('click', () => openBookingForm(Number(button.dataset.bookingEdit))));
@@ -1555,7 +1629,7 @@ function openCommissionForm() {
     document.querySelector('[data-commission-form]').addEventListener('submit', (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
-      commissions.push({ partner: form.get('partner').trim(), reference: form.get('reference').trim(), amount: parseMoney(form.get('amount')), status: 'pending', createdAt: new Date().toISOString() });
+      commissions.push({ id: crypto.randomUUID(), partner: form.get('partner').trim(), reference: form.get('reference').trim(), amount: parseMoney(form.get('amount')), status: 'pending', createdAt: new Date().toISOString() });
       persistCollection(commissionStorageKey, commissions);
       closeModal();
       showToast('Đã tạo khoản hoa hồng');
@@ -1571,11 +1645,26 @@ function openCommissionManager() {
     document.querySelectorAll('[data-commission-pay]').forEach((button) => button.addEventListener('click', () => {
       const commission = commissions[Number(button.dataset.commissionPay)];
       if (commission.status === 'paid') return;
-      commission.status = 'paid';
-      commission.paidAt = new Date().toISOString();
-      persistCollection(commissionStorageKey, commissions);
-      openCommissionManager();
-      showToast('Đã ghi nhận thanh toán hoa hồng');
+      commission.id ||= crypto.randomUUID();
+      openModal('Thanh toán hoa hồng', `<form class="building-form" data-commission-payment-form><div class="entity-summary">${escapeHtml(commission.partner)} · <strong>${Number(commission.amount || 0).toLocaleString('vi-VN')} đ</strong></div><label>Phương thức<select name="method"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Xác nhận chi</button></div></form>`, () => {
+        document.querySelector('[data-modal-cancel]').addEventListener('click', openCommissionManager);
+        const formElement = document.querySelector('[data-commission-payment-form]');
+        formElement.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const submitButton = formElement.querySelector('[type="submit"]');
+          submitButton.disabled = true;
+          const method = new FormData(formElement).get('method');
+          try {
+            await postFinancialEvent({ sourceType: 'commission-payment', sourceId: commission.id, title: `Chi hoa hồng - ${commission.partner}`, type: 'expense', amount: commission.amount, category: 'commission', method });
+            commission.status = 'paid';
+            commission.paidAt = new Date().toISOString();
+            commission.paymentMethod = method;
+            persistCollection(commissionStorageKey, commissions);
+            openCommissionManager();
+            showToast('Đã chi hoa hồng và đồng bộ Sổ thu chi');
+          } catch (error) { submitButton.disabled = false; showToast(error.message); }
+        });
+      });
     }));
   });
 }
@@ -1591,29 +1680,141 @@ function openLocationManager() {
   });
 }
 
-function openFinancialSummary(type) {
-  const isDeposit = type === 'deposit-ledger';
-  const records = isDeposit ? depositLedger : prepayments;
-  const title = isDeposit ? 'Tổng hợp tiền cọc' : 'Tiền khách trả thừa';
-  const derived = isDeposit ? reservations.map((reservation) => ({ name: reservation.name, amount: reservation.amount, note: reservation.apartment || 'Chưa xác định' })) : invoices.filter((invoice) => invoice.status === 'paid' && Number(invoice.overpayment || 0) > 0).map((invoice) => ({ name: invoice.title, amount: invoice.overpayment, note: 'Từ hóa đơn đã thu' }));
-  const rows = [...records, ...derived];
-  const items = rows.length ? rows.map((record) => `<div class="modal-option"><span>${escapeHtml(record.name || 'Khoản tiền')}</span><small>${escapeHtml(record.note || record.apartment || '')} · ${Number(record.amount || 0).toLocaleString('vi-VN')} đ</small></div>`).join('') : '<p class="empty-state">Chưa có dữ liệu phát sinh.</p>';
-  openModal(title, `<div class="entity-summary">Tổng cộng: <strong>${rows.reduce((total, record) => total + Number(record.amount || 0), 0).toLocaleString('vi-VN')} đ</strong></div><div class="modal-list">${items}</div>`);
+function openDepositSummary() {
+  const statusLabels = { active: 'Đang giữ', held: 'Đang giữ', completed: 'Đã kết thúc', refunded: 'Đã hoàn', forfeited: 'Đã giữ lại', applied: 'Đã khấu trừ' };
+  const rows = [...reservations, ...depositLedger.map((record) => ({ ...record, legacy: true }))];
+  const held = reservations.filter((record) => ['active', 'held'].includes(record.status)).reduce((total, record) => total + Number(record.amount || 0), 0);
+  const refunded = reservations.filter((record) => record.status === 'refunded').reduce((total, record) => total + Number(record.amount || 0), 0);
+  const settled = reservations.filter((record) => ['forfeited', 'applied'].includes(record.status)).reduce((total, record) => total + Number(record.appliedAmount || record.amount || 0), 0);
+  const items = rows.length ? rows.map((record) => `<div class="modal-option"><span>${escapeHtml(record.name || 'Khoản tiền')}</span><small>${escapeHtml([record.building, record.note || record.apartment].filter(Boolean).join(' · ') || 'Chưa xác định')} · ${Number(record.amount || 0).toLocaleString('vi-VN')} đ · ${record.legacy ? 'Dữ liệu cũ' : statusLabels[record.status] || 'Đang giữ'}</small></div>`).join('') : '<p class="empty-state">Chưa có dữ liệu phát sinh.</p>';
+  openModal('Tổng hợp tiền cọc', `<div class="cashflow-summary"><article><span>Đang giữ</span><strong>${held.toLocaleString('vi-VN')} đ</strong></article><article><span>Đã hoàn</span><strong>${refunded.toLocaleString('vi-VN')} đ</strong></article><article><span>Đã khấu trừ/giữ lại</span><strong>${settled.toLocaleString('vi-VN')} đ</strong></article></div><div class="modal-list">${items}</div>`);
+}
+
+function mergeFinancialResponse(payload) {
+  const invoiceIndex = payload.invoice ? invoices.findIndex((item) => item.id === payload.invoice.id) : -1;
+  if (invoiceIndex >= 0) invoices[invoiceIndex] = payload.invoice;
+  if (payload.invoice) localStorage.setItem(invoiceStorageKey, JSON.stringify(invoices));
+  if (currentUserRole === 'owner' && payload.cashflowEntry && !cashflow.some((entry) => entry.id === payload.cashflowEntry.id)) {
+    cashflow.push(payload.cashflowEntry);
+    localStorage.setItem(cashflowStorageKey, JSON.stringify(cashflow));
+  }
+  updateDashboard();
+}
+
+async function postFinancialEvent(event) {
+  const response = await fetch(`${apiBaseUrl}/financial-events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || 'Không thể ghi nhận giao dịch');
+  if (currentUserRole === 'owner' && payload.cashflowEntry && !cashflow.some((entry) => entry.id === payload.cashflowEntry.id)) {
+    cashflow.push(payload.cashflowEntry);
+    localStorage.setItem(cashflowStorageKey, JSON.stringify(cashflow));
+  }
+  return payload;
+}
+
+function openInvoiceCollectionForm(invoiceIndex, returnView = 'invoices') {
+  const invoice = invoices[invoiceIndex];
+  if (!invoice || invoice.status === 'paid' || invoice.approvalStatus === 'pending') return;
+  openModal('Ghi nhận thu tiền', `<form class="building-form" data-invoice-collection-form><div class="entity-summary">${escapeHtml(invoice.title)} · <strong>${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ</strong></div><label>Số tiền thực nhận<input name="amount" inputmode="numeric" required value="${Number(invoice.amount || 0)}"></label><label>Phương thức<select name="method"><option value="cash">Tiền mặt</option><option value="bank-transfer">Chuyển khoản</option><option value="other">Khác</option></select></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Xác nhận đã thu</button></div></form>`, () => {
+    document.querySelector('[data-modal-cancel]').addEventListener('click', () => returnView === 'schedule' ? openPaymentSchedule() : openInvoiceManager('unpaid'));
+    const formElement = document.querySelector('[data-invoice-collection-form]');
+    setupMoneyInputs(formElement);
+    formElement.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = new FormData(formElement);
+      const submitButton = formElement.querySelector('[type="submit"]');
+      submitButton.disabled = true;
+      try {
+        const response = await fetch(`${apiBaseUrl}/invoices/${encodeURIComponent(invoice.id)}/collect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: parseMoney(form.get('amount')), method: form.get('method') }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Không thể ghi nhận thanh toán');
+        mergeFinancialResponse(payload);
+        returnView === 'schedule' ? openPaymentSchedule() : openInvoiceManager('paid');
+        showToast(payload.duplicate ? 'Khoản thu đã được ghi nhận trước đó' : 'Đã thu và đồng bộ Sổ thu chi');
+      } catch (error) { submitButton.disabled = false; showToast(error.message); }
+    });
+  });
+}
+
+function openInvoiceReversalForm(invoiceIndex) {
+  const invoice = invoices[invoiceIndex];
+  if (!invoice || invoice.status !== 'paid' || currentUserRole !== 'owner') return;
+  openModal('Hoàn tác thu tiền', `<form class="building-form" data-invoice-reversal-form><div class="entity-summary">Giao dịch gốc vẫn được giữ lại. Hệ thống sẽ tạo một dòng đối ứng trong Sổ thu chi.</div><label>Lý do hoàn tác<textarea name="reason" required minlength="3" maxlength="300" placeholder="Ví dụ: Ghi nhận nhầm hóa đơn hoặc sai phương thức"></textarea></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Xác nhận hoàn tác</button></div></form>`, () => {
+    document.querySelector('[data-modal-cancel]').addEventListener('click', () => openInvoiceManager('paid'));
+    const formElement = document.querySelector('[data-invoice-reversal-form]');
+    formElement.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const submitButton = formElement.querySelector('[type="submit"]');
+      submitButton.disabled = true;
+      try {
+        const response = await fetch(`${apiBaseUrl}/invoices/${encodeURIComponent(invoice.id)}/reverse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: new FormData(formElement).get('reason').trim() }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Không thể hoàn tác thanh toán');
+        mergeFinancialResponse(payload);
+        openInvoiceManager('unpaid');
+        showToast('Đã hoàn tác và tạo giao dịch đối ứng');
+      } catch (error) { submitButton.disabled = false; showToast(error.message); }
+    });
+  });
+}
+
+function openPaymentSchedule() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const buildingOptions = [...new Set(invoices.map((invoice) => invoice.building).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'vi'));
+  const groups = [
+    { key: 'overdue', title: 'Quá hạn' },
+    { key: 'today', title: 'Hôm nay' },
+    { key: 'upcoming', title: '7 ngày tới' },
+    { key: 'later', title: 'Sau đó' },
+    { key: 'unscheduled', title: 'Chưa đặt hạn' }
+  ];
+  const render = (month = '', buildingName = '') => {
+    const rows = invoices.filter((invoice) => invoice.approvalStatus !== 'pending' && invoice.status !== 'paid' && (!month || String(invoice.dueDate || '').slice(0, 7) === month) && (!buildingName || invoice.building === buildingName)).map((invoice) => {
+      const dueDate = invoice.dueDate ? new Date(`${invoice.dueDate}T00:00:00`) : null;
+      const daysUntilDue = dueDate ? Math.round((dueDate - today) / 86_400_000) : null;
+      const group = daysUntilDue === null ? 'unscheduled' : daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'today' : daysUntilDue <= 7 ? 'upcoming' : 'later';
+      const customer = getInvoiceDetails(invoice).customer;
+      return { invoice, index: invoices.indexOf(invoice), dueDate, daysUntilDue, group, customer, amount: Number(invoice.amount || 0) };
+    }).sort((left, right) => String(left.invoice.dueDate || '9999-12-31').localeCompare(String(right.invoice.dueDate || '9999-12-31')));
+    const overdueRows = rows.filter((row) => row.group === 'overdue');
+    const upcomingRows = rows.filter((row) => row.group !== 'overdue');
+    const renderRow = (row) => {
+      const dueLabel = row.daysUntilDue === null ? 'Chưa đặt hạn' : row.daysUntilDue < 0 ? `Quá hạn ${Math.abs(row.daysUntilDue)} ngày` : row.daysUntilDue === 0 ? 'Đến hạn hôm nay' : `Hạn ${row.dueDate.toLocaleDateString('vi-VN')}`;
+      const location = [row.invoice.building, row.invoice.apartment].filter(Boolean).join(' · ') || 'Chưa xác định căn hộ';
+      return `<article class="payment-schedule-item${row.group === 'overdue' ? ' is-overdue' : ''}"><div class="payment-schedule-date"><strong>${row.dueDate ? row.dueDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : '--/--'}</strong><small>${row.dueDate?.getFullYear() || ''}</small></div><div class="payment-schedule-detail"><strong>${escapeHtml(row.customer)}</strong><span>${escapeHtml(row.invoice.title || 'Hóa đơn')} · ${escapeHtml(location)}</span><small>${escapeHtml(dueLabel)}</small></div><strong class="payment-schedule-amount">${row.amount.toLocaleString('vi-VN')} đ</strong><div class="payment-schedule-actions"><button type="button" data-payment-qr="${row.index}">VietQR</button><button type="button" data-payment-collected="${row.index}">Đã thu</button></div></article>`;
+    };
+    const sections = groups.map((group) => {
+      const groupRows = rows.filter((row) => row.group === group.key);
+      if (!groupRows.length) return '';
+      return `<section class="payment-schedule-group"><header><strong>${group.title}</strong><span>${groupRows.length} khoản · ${groupRows.reduce((total, row) => total + row.amount, 0).toLocaleString('vi-VN')} đ</span></header>${groupRows.map(renderRow).join('')}</section>`;
+    }).join('');
+    return `<div class="payment-schedule-toolbar"><label>Kỳ thu<input type="month" data-payment-month value="${escapeHtml(month)}"></label><label>Tòa nhà<select data-payment-building><option value="">Toàn hệ thống</option>${buildingOptions.map((building) => `<option value="${escapeHtml(building)}" ${building === buildingName ? 'selected' : ''}>${escapeHtml(building)}</option>`).join('')}</select></label></div><div class="payment-schedule-summary"><article><span>Quá hạn</span><strong>${overdueRows.reduce((total, row) => total + row.amount, 0).toLocaleString('vi-VN')} đ</strong><small>${overdueRows.length} khoản cần xử lý</small></article><article><span>Chưa quá hạn</span><strong>${upcomingRows.reduce((total, row) => total + row.amount, 0).toLocaleString('vi-VN')} đ</strong><small>${upcomingRows.length} khoản đang chờ thu</small></article></div><div class="payment-schedule-list">${sections || '<p class="empty-state">Không có hóa đơn đã duyệt cần thu trong phạm vi này.</p>'}</div>`;
+  };
+  const bind = () => {
+    const container = document.querySelector('[data-payment-schedule]');
+    const refresh = () => {
+      const month = container.querySelector('[data-payment-month]').value;
+      const buildingName = container.querySelector('[data-payment-building]').value;
+      container.innerHTML = render(month, buildingName);
+      bind();
+    };
+    container.querySelector('[data-payment-month]').addEventListener('change', refresh);
+    container.querySelector('[data-payment-building]').addEventListener('change', refresh);
+    container.querySelectorAll('[data-payment-qr]').forEach((button) => button.addEventListener('click', () => openInvoicePayment(invoices[Number(button.dataset.paymentQr)])));
+    container.querySelectorAll('[data-payment-collected]').forEach((button) => button.addEventListener('click', () => openInvoiceCollectionForm(Number(button.dataset.paymentCollected), 'schedule')));
+  };
+  openModal('Lịch thu tiền', `<div data-payment-schedule>${render()}</div>`, () => {
+    document.querySelector('[data-modal]').classList.add('payment-schedule-modal');
+    bind();
+  });
 }
 
 function openFinancialReport(type) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const paymentRows = invoices.filter((invoice) => invoice.status !== 'paid').map((invoice) => {
-    const dueDate = invoice.dueDate ? new Date(`${invoice.dueDate}T00:00:00`) : null;
-    const overdueDays = dueDate && dueDate < today ? Math.ceil((today - dueDate) / 86_400_000) : 0;
-    return { name: invoice.title, detail: dueDate ? overdueDays ? `Quá hạn ${overdueDays} ngày · Hạn ${dueDate.toLocaleDateString('vi-VN')}` : `Hạn thu ${dueDate.toLocaleDateString('vi-VN')}` : 'Chưa đặt hạn thanh toán', amount: Number(invoice.amount || 0), overdue: overdueDays > 0, dueDate: invoice.dueDate || '9999-12-31' };
-  }).sort((left, right) => left.dueDate.localeCompare(right.dueDate));
+  const profitEntries = cashflow.filter((entry) => entry.affectsProfit !== false);
   const reportConfigs = {
-    daily: { title: 'Tài khoản theo ngày', rows: cashflow.map((entry) => ({ name: entry.title, detail: `${entry.type === 'income' ? 'Thu' : 'Chi'} · ${new Date(entry.createdAt).toLocaleDateString('vi-VN')}`, amount: entry.type === 'income' ? Number(entry.amount) : -Number(entry.amount) })) },
-    profit: { title: 'Tổng hợp lợi nhuận', rows: [{ name: 'Tổng khoản thu', detail: 'Từ dữ liệu thu chi', amount: cashflow.filter((entry) => entry.type === 'income').reduce((total, entry) => total + Number(entry.amount || 0), 0) }, { name: 'Tổng khoản chi', detail: 'Từ dữ liệu thu chi', amount: -cashflow.filter((entry) => entry.type === 'expense').reduce((total, entry) => total + Number(entry.amount || 0), 0) }] },
-    debts: { title: 'Công nợ khách thuê', rows: invoices.filter((invoice) => invoice.status !== 'paid').map((invoice) => ({ name: invoice.title, detail: 'Chưa thu', amount: Number(invoice.amount || 0) })) },
-    payments: { title: 'Lịch thu tiền', rows: paymentRows }
+    profit: { title: 'Thu chi thực tế', rows: [{ name: 'Khoản thu đã ghi nhận', detail: 'Không bao gồm tiền cọc đang giữ', amount: profitEntries.filter((entry) => entry.type === 'income').reduce((total, entry) => total + Number(entry.amount || 0), 0) }, { name: 'Khoản chi đã ghi nhận', detail: 'Gồm hoa hồng, sửa chữa và mua tài sản', amount: -profitEntries.filter((entry) => entry.type === 'expense').reduce((total, entry) => total + Number(entry.amount || 0), 0) }] },
+    debts: { title: 'Công nợ khách thuê', rows: invoices.filter((invoice) => invoice.approvalStatus === 'approved' && invoice.status !== 'paid').map((invoice) => ({ name: invoice.title, detail: [getInvoiceDetails(invoice).customer, invoice.building, invoice.apartment, invoice.dueDate && `Hạn ${new Date(`${invoice.dueDate}T00:00:00`).toLocaleDateString('vi-VN')}`].filter(Boolean).join(' · '), amount: Number(invoice.amount || 0) })) }
   };
   const report = reportConfigs[type];
   const total = report.rows.reduce((sum, row) => sum + row.amount, 0);
@@ -1730,8 +1931,9 @@ function getInvoiceLineItems(invoice) {
     ['Tiền điện', invoice.billingLines.electricity],
     ['Tiền nước', invoice.billingLines.water],
     [invoice.billingLines.serviceLabel || 'Phí dịch vụ', invoice.billingLines.service],
-    ...(invoice.extraCharges || []).map((charge) => [charge.label || 'Chi phí phát sinh', charge.amount])
-  ].filter(([, amount]) => Number(amount || 0) > 0);
+    ...(invoice.extraCharges || []).map((charge) => [charge.label || 'Chi phí phát sinh', charge.amount]),
+    ...(Number(invoice.depositApplied || 0) > 0 ? [['Khấu trừ tiền cọc', -Number(invoice.depositApplied)]] : [])
+  ].filter(([, amount]) => Number(amount || 0) !== 0);
   if (invoice.utilityLines) return [['Tiền điện', invoice.utilityLines.electricity], ['Tiền nước', invoice.utilityLines.water]].filter(([, amount]) => Number(amount || 0) > 0);
   return [[invoice.title, invoice.amount]];
 }
@@ -1762,7 +1964,7 @@ function openInvoiceEditForm(invoiceIndex) {
     </div></section>
     <section class="form-section"><div class="form-section-title"><strong>Chi phí phát sinh</strong><button class="modal-secondary" type="button" data-add-charge>＋ Thêm khoản</button></div><div data-extra-charges>${charges.map(renderCharge).join('')}</div></section>
     <div class="entity-summary">Tổng hóa đơn: <strong data-invoice-edit-total>0 đ</strong></div>
-    <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="modal-secondary" type="submit">Lưu chỉnh sửa</button><button class="primary-button" type="submit" data-invoice-approve-submit>Duyệt & gửi</button></div>
+    <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="modal-secondary" type="submit">Lưu chỉnh sửa</button>${currentUserRole === 'owner' ? '<button class="primary-button" type="submit" data-invoice-approve-submit>Duyệt & gửi</button>' : ''}</div>
   </form>`, () => {
     const formElement = document.querySelector('[data-invoice-edit-form]');
     const chargeContainer = formElement.querySelector('[data-extra-charges]');
@@ -1852,7 +2054,7 @@ function openInvoiceManager(filter = 'pending') {
   const matchesFilter = (invoice) => filter === 'pending' ? invoice.approvalStatus === 'pending' : filter === 'approved' ? invoice.approvalStatus !== 'pending' : filter === 'unpaid' ? invoice.approvalStatus !== 'pending' && invoice.status !== 'paid' : invoice.status === 'paid';
   const filteredInvoices = invoices.filter(matchesFilter);
   const items = filteredInvoices.length
-    ? filteredInvoices.map((invoice) => { const index = invoices.indexOf(invoice); return `<article class="modal-option"><div><span>${escapeHtml(invoice.title)}</span><small>${escapeHtml(invoice.paymentCode || 'Chưa có mã thanh toán')} · ${Number(invoice.amount).toLocaleString('vi-VN')} đ · ${invoice.approvalStatus === 'pending' ? 'Chờ duyệt' : invoice.status === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}</small></div><div class="catalog-actions">${invoice.approvalStatus === 'pending' ? `<button type="button" data-invoice-edit="${index}">Xem, duyệt & gửi</button>` : ''}${invoice.approvalStatus !== 'pending' && invoice.status !== 'paid' ? `<button type="button" data-invoice-qr="${index}">VietQR</button>` : ''}<button type="button" data-invoice-print="${index}">PDF</button><button type="button" data-invoice-image="${index}">Ảnh</button>${invoice.approvalStatus === 'pending' ? '' : `<button type="button" data-invoice-index="${index}">${invoice.status === 'paid' ? 'Hoàn tác' : 'Đã thu'}</button>`}</div></article>`; }).join('')
+    ? filteredInvoices.map((invoice) => { const index = invoices.indexOf(invoice); return `<article class="modal-option"><div><span>${escapeHtml(invoice.title)}</span><small>${escapeHtml(invoice.paymentCode || 'Chưa có mã thanh toán')} · ${Number(invoice.amount).toLocaleString('vi-VN')} đ · ${invoice.approvalStatus === 'pending' ? 'Chờ duyệt' : invoice.status === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}</small></div><div class="catalog-actions">${invoice.approvalStatus === 'pending' ? `<button type="button" data-invoice-edit="${index}">${currentUserRole === 'owner' ? 'Xem, duyệt & gửi' : 'Xem & chỉnh sửa'}</button>` : ''}${invoice.approvalStatus !== 'pending' && invoice.status !== 'paid' ? `<button type="button" data-invoice-qr="${index}">VietQR</button>` : ''}<button type="button" data-invoice-print="${index}">PDF</button><button type="button" data-invoice-image="${index}">Ảnh</button>${invoice.approvalStatus === 'pending' || (invoice.status === 'paid' && currentUserRole !== 'owner') ? '' : `<button type="button" data-invoice-index="${index}">${invoice.status === 'paid' ? 'Hoàn tác' : 'Đã thu'}</button>`}</div></article>`; }).join('')
     : '<p class="empty-state">Chưa có hóa đơn nào.</p>';
   openModal('Hóa đơn khách thuê', `<div class="customer-tabs invoice-tabs"><button class="${filter === 'pending' ? 'active' : ''}" data-invoice-filter="pending">Chờ duyệt (${invoices.filter((item) => item.approvalStatus === 'pending').length})</button><button class="${filter === 'approved' ? 'active' : ''}" data-invoice-filter="approved">Đã duyệt</button><button class="${filter === 'unpaid' ? 'active' : ''}" data-invoice-filter="unpaid">Chưa thanh toán</button><button class="${filter === 'paid' ? 'active' : ''}" data-invoice-filter="paid">Đã thanh toán</button></div><div class="entity-summary">Tổng tiền trong mục: <strong>${filteredInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0).toLocaleString('vi-VN')} đ</strong></div><div class="modal-list">${items}</div><button class="modal-secondary" type="button" data-modal-add-invoice>＋ Thêm hóa đơn</button>`, () => {
     document.querySelectorAll('[data-invoice-filter]').forEach((button) => button.addEventListener('click', () => openInvoiceManager(button.dataset.invoiceFilter)));
@@ -1862,28 +2064,30 @@ function openInvoiceManager(filter = 'pending') {
     document.querySelectorAll('[data-invoice-print]').forEach((button) => button.addEventListener('click', () => printInvoice(invoices[Number(button.dataset.invoicePrint)])));
     document.querySelectorAll('[data-invoice-image]').forEach((button) => button.addEventListener('click', () => copyInvoiceImage(invoices[Number(button.dataset.invoiceImage)]).catch(() => showToast('Không thể tạo ảnh hóa đơn.'))));
     document.querySelectorAll('[data-invoice-index]').forEach((button) => button.addEventListener('click', () => {
-      const invoice = invoices[Number(button.dataset.invoiceIndex)];
-      invoice.status = invoice.status === 'paid' ? 'unpaid' : 'paid';
-      persistCollection(invoiceStorageKey, invoices);
-      updateDashboard();
-      closeModal();
-      showToast(`Đã cập nhật: ${invoice.status === 'paid' ? 'Đã thu' : 'Chưa thu'}`);
+      const index = Number(button.dataset.invoiceIndex);
+      invoices[index].status === 'paid' ? openInvoiceReversalForm(index) : openInvoiceCollectionForm(index);
     }));
   });
 }
 
 function openCashflowForm() {
-  openModal('Thêm giao dịch', `<form class="building-form" data-cashflow-form>
+  openModal('Thêm giao dịch', `<form class="building-form" data-cashflow-form><div class="form-grid">
     <label>Nội dung<input name="title" required maxlength="80" placeholder="Ví dụ: Mua vật tư sửa chữa"></label>
     <label>Loại giao dịch<select name="type"><option value="income">Khoản thu</option><option value="expense">Khoản chi</option></select></label>
-    <label>Số tiền<input name="amount" type="number" min="0" required value="0"></label>
+    <label>Nhóm thu chi<select name="category"><option value="other-income">Thu khác</option><option value="rent">Tiền nhà</option><option value="utilities">Điện nước</option><option value="service">Dịch vụ</option><option value="other-expense">Chi khác</option><option value="maintenance">Sửa chữa</option><option value="commission">Hoa hồng</option><option value="asset-purchase">Mua tài sản</option></select></label>
+    <label>Phương thức<select name="method"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label>
+    <label>Số tiền<input name="amount" inputmode="numeric" required value="0"></label>
+    <label>Ngày giao dịch<input name="transactionDate" type="date" required value="${new Date().toISOString().slice(0, 10)}"></label>
+    <label>Tòa nhà<select name="building"><option value="">Toàn hệ thống/không xác định</option>${buildings.map((building) => `<option value="${escapeHtml(building.name)}">${escapeHtml(building.name)}</option>`).join('')}</select></label>
+    <label>Căn hộ<input name="apartment" maxlength="80" placeholder="Có thể để trống"></label></div>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu giao dịch</button></div>
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
+    setupMoneyInputs(document.querySelector('[data-cashflow-form]'));
     document.querySelector('[data-cashflow-form]').addEventListener('submit', (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
-      cashflow.push({ title: form.get('title').trim(), type: form.get('type'), amount: parseMoney(form.get('amount')), createdAt: new Date().toISOString() });
+      cashflow.push({ id: crypto.randomUUID(), title: form.get('title').trim(), type: form.get('type'), amount: parseMoney(form.get('amount')), category: form.get('category'), method: form.get('method'), building: form.get('building'), apartment: form.get('apartment').trim(), transactionDate: form.get('transactionDate'), sourceType: 'manual', sourceId: crypto.randomUUID(), recordedBy: currentUserName, affectsCash: true, affectsProfit: true, createdAt: new Date().toISOString() });
       persistCollection(cashflowStorageKey, cashflow);
       updateDashboard();
       closeModal();
@@ -1892,14 +2096,52 @@ function openCashflowForm() {
   });
 }
 
+function openCashflowReversalForm(entryIndex) {
+  const entry = cashflow[entryIndex];
+  if (!entry?.id || entry.reversalOf || cashflow.some((item) => item.reversalOf === entry.id)) return;
+  openModal('Hoàn tác giao dịch', `<form class="building-form" data-cashflow-reversal-form><div class="entity-summary">${escapeHtml(entry.title)} · <strong>${Number(entry.amount || 0).toLocaleString('vi-VN')} đ</strong></div><label>Lý do hoàn tác<textarea name="reason" required minlength="3" maxlength="300"></textarea></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Tạo giao dịch đối ứng</button></div></form>`, () => {
+    document.querySelector('[data-modal-cancel]').addEventListener('click', openCashflowManager);
+    const formElement = document.querySelector('[data-cashflow-reversal-form]');
+    formElement.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const submitButton = formElement.querySelector('[type="submit"]');
+      submitButton.disabled = true;
+      try {
+        const response = await fetch(`${apiBaseUrl}/cashflow/${encodeURIComponent(entry.id)}/reverse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: new FormData(formElement).get('reason').trim() }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Không thể hoàn tác giao dịch');
+        if (!cashflow.some((item) => item.id === payload.cashflowEntry.id)) cashflow.push(payload.cashflowEntry);
+        localStorage.setItem(cashflowStorageKey, JSON.stringify(cashflow));
+        openCashflowManager();
+        showToast('Đã tạo giao dịch đối ứng, dữ liệu gốc được giữ nguyên');
+      } catch (error) { submitButton.disabled = false; showToast(error.message); }
+    });
+  });
+}
+
 function openCashflowManager() {
-  const items = cashflow.length
-    ? cashflow.map((entry) => `<div class="modal-option"><span>${escapeHtml(entry.title)}</span><small class="${entry.type === 'income' ? 'green-text' : 'negative'}">${entry.type === 'income' ? '+' : '-'}${Number(entry.amount).toLocaleString('vi-VN')} đ</small></div>`).join('')
-    : '<p class="empty-state">Chưa có giao dịch nào.</p>';
-  const income = cashflow.filter((entry) => entry.type === 'income').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const expense = cashflow.filter((entry) => entry.type === 'expense').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  openModal('Sổ thu chi', `<div class="entity-summary">Thu: <strong>${income.toLocaleString('vi-VN')} đ</strong> · Chi: <strong>${expense.toLocaleString('vi-VN')} đ</strong></div><div class="modal-list">${items}</div><button class="modal-secondary" type="button" data-modal-add-cashflow>＋ Thêm giao dịch</button>`, () => {
-    document.querySelector('[data-modal-add-cashflow]').addEventListener('click', openCashflowForm);
+  const categoryLabels = { 'invoice-payment': 'Thu hóa đơn', commission: 'Hoa hồng', 'asset-repair': 'Sửa chữa', 'asset-purchase': 'Mua tài sản', deposit: 'Tiền cọc', 'deposit-receipt': 'Thu cọc', 'deposit-refund': 'Hoàn cọc', 'deposit-forfeit': 'Giữ cọc', 'deposit-apply': 'Khấu trừ cọc', 'payment-reversal': 'Hoàn tác thu', 'transaction-reversal': 'Hoàn tác', rent: 'Tiền nhà', utilities: 'Điện nước', service: 'Dịch vụ', 'other-income': 'Thu khác', 'other-expense': 'Chi khác' };
+  const methodLabels = { cash: 'Tiền mặt', 'bank-transfer': 'Chuyển khoản', other: 'Khác', deposit: 'Tiền cọc' };
+  const render = (month = '', buildingName = '', type = '') => {
+    const rows = cashflow.map((entry, index) => ({ entry, index })).filter(({ entry }) => (!month || String(entry.transactionDate || entry.createdAt || '').slice(0, 7) === month) && (!buildingName || entry.building === buildingName) && (!type || entry.type === type));
+    const cashIncome = rows.filter(({ entry }) => entry.affectsCash !== false && entry.type === 'income').reduce((sum, { entry }) => sum + Number(entry.amount || 0), 0);
+    const cashExpense = rows.filter(({ entry }) => entry.affectsCash !== false && entry.type === 'expense').reduce((sum, { entry }) => sum + Number(entry.amount || 0), 0);
+    const profit = rows.filter(({ entry }) => entry.affectsProfit !== false).reduce((sum, { entry }) => sum + (entry.type === 'income' ? Number(entry.amount || 0) : -Number(entry.amount || 0)), 0);
+    const items = rows.length ? rows.slice().reverse().map(({ entry, index }) => { const reversed = cashflow.some((item) => item.reversalOf === entry.id); const canReverseHere = entry.sourceType === 'manual' && !entry.reversalOf && !reversed; return `<article class="modal-option cashflow-entry"><div><span>${escapeHtml(entry.title)}</span><small>${escapeHtml(categoryLabels[entry.category] || categoryLabels[entry.sourceType] || 'Chưa phân loại')} · ${escapeHtml(methodLabels[entry.method] || 'Chưa xác định')} · ${escapeHtml([entry.building, entry.apartment].filter(Boolean).join(' · ') || 'Toàn hệ thống')} · ${new Date(entry.transactionDate ? `${entry.transactionDate}T00:00:00` : entry.createdAt).toLocaleDateString('vi-VN')}</small>${entry.note ? `<small>Lý do: ${escapeHtml(entry.note)}</small>` : ''}</div><div class="cashflow-value"><strong class="${entry.type === 'income' ? 'green-text' : 'negative'}">${entry.type === 'income' ? '+' : '-'}${Number(entry.amount).toLocaleString('vi-VN')} đ</strong>${canReverseHere ? `<button type="button" data-cashflow-reverse="${index}">Hoàn tác</button>` : (entry.reversalOf || reversed ? `<small>${entry.reversalOf ? 'Dòng đối ứng' : 'Đã hoàn tác'}</small>` : '<small>Quản lý tại nghiệp vụ gốc</small>')}</div></article>`; }).join('') : '<p class="empty-state">Không có giao dịch trong phạm vi lọc.</p>';
+    return `<div class="cashflow-toolbar"><label>Tháng<input type="month" data-cashflow-month value="${escapeHtml(month)}"></label><label>Tòa nhà<select data-cashflow-building><option value="">Toàn hệ thống</option>${buildings.map((building) => `<option value="${escapeHtml(building.name)}" ${building.name === buildingName ? 'selected' : ''}>${escapeHtml(building.name)}</option>`).join('')}</select></label><label>Loại<select data-cashflow-type><option value="">Tất cả</option><option value="income" ${type === 'income' ? 'selected' : ''}>Khoản thu</option><option value="expense" ${type === 'expense' ? 'selected' : ''}>Khoản chi</option></select></label></div><div class="cashflow-summary"><article><span>Tiền vào</span><strong>${cashIncome.toLocaleString('vi-VN')} đ</strong></article><article><span>Tiền ra</span><strong>${cashExpense.toLocaleString('vi-VN')} đ</strong></article><article><span>Thu chi thực tế</span><strong class="${profit < 0 ? 'negative' : 'green-text'}">${profit.toLocaleString('vi-VN')} đ</strong></article></div><div class="modal-list">${items}</div><button class="modal-secondary" type="button" data-modal-add-cashflow>＋ Thêm giao dịch</button>`;
+  };
+  const bind = () => {
+    const container = document.querySelector('[data-cashflow-manager]');
+    const refresh = () => { const month = container.querySelector('[data-cashflow-month]').value; const buildingName = container.querySelector('[data-cashflow-building]').value; const type = container.querySelector('[data-cashflow-type]').value; container.innerHTML = render(month, buildingName, type); bind(); };
+    container.querySelector('[data-cashflow-month]').addEventListener('change', refresh);
+    container.querySelector('[data-cashflow-building]').addEventListener('change', refresh);
+    container.querySelector('[data-cashflow-type]').addEventListener('change', refresh);
+    container.querySelector('[data-modal-add-cashflow]').addEventListener('click', openCashflowForm);
+    container.querySelectorAll('[data-cashflow-reverse]').forEach((button) => button.addEventListener('click', () => openCashflowReversalForm(Number(button.dataset.cashflowReverse))));
+  };
+  openModal('Sổ thu chi', `<div data-cashflow-manager>${render()}</div>`, () => {
+    document.querySelector('[data-modal]').classList.add('finance-ledger-modal');
+    bind();
   });
 }
 
@@ -1960,17 +2202,17 @@ function openAssetOperations(type) {
   const warehouseOptions = optionsFor(catalogs.warehouses || [], 'Chọn kho tài sản');
   const assetTypeOptions = optionsFor(catalogs['asset-types'] || [], 'Chưa phân loại');
   const configs = {
-    assets: { title: 'Danh sách tài sản', fields: `<label>Mã tài sản<input name="code" required maxlength="40" placeholder="TS-0001"></label><label>Tên tài sản<input name="name" required maxlength="100"></label><label>Loại tài sản<select name="assetType">${assetTypeOptions}</select></label><label>Nhà cung cấp<select name="provider">${providerOptions}</select></label><label>Kho tài sản<select name="warehouse">${warehouseOptions}</select></label><label>Số lượng<input name="quantity" type="number" min="1" value="1"></label><label>Trạng thái<select name="status"><option value="active">Đang sử dụng</option><option value="stored">Trong kho</option><option value="broken">Hỏng</option><option value="disposed">Đã thanh lý</option></select></label>` },
+    assets: { title: 'Danh sách tài sản', fields: `<label>Mã tài sản<input name="code" required maxlength="40" placeholder="TS-0001"></label><label>Tên tài sản<input name="name" required maxlength="100"></label><label>Loại tài sản<select name="assetType">${assetTypeOptions}</select></label><label>Nhà cung cấp<select name="provider">${providerOptions}</select></label><label>Kho tài sản<select name="warehouse">${warehouseOptions}</select></label><label>Số lượng<input name="quantity" type="number" min="1" value="1"></label><label>Giá mua<input name="purchaseAmount" inputmode="numeric" value="0"></label><label>Ngày mua<input name="purchasedAt" type="date"></label><label>Phương thức thanh toán<select name="paymentMethod"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label><label>Trạng thái<select name="status"><option value="active">Đang sử dụng</option><option value="stored">Trong kho</option><option value="broken">Hỏng</option><option value="disposed">Đã thanh lý</option></select></label>` },
     providers: { title: 'Nhà cung cấp', fields: '<label>Tên nhà cung cấp<input name="name" required maxlength="100"></label><label>Mã số thuế<input name="taxCode" maxlength="30"></label><label>Người liên hệ<input name="contact" maxlength="80"></label><label>Số điện thoại<input name="phone" maxlength="30"></label><label>Email<input name="email" type="email" maxlength="120"></label><label>Ghi chú<textarea name="note" maxlength="300"></textarea></label>' },
     warehouses: { title: 'Kho tài sản', fields: '<label>Tên kho<input name="name" required maxlength="100"></label><label>Mã kho<input name="code" required maxlength="40"></label><label>Địa chỉ<input name="address" maxlength="180"></label><label>Người phụ trách<input name="manager" maxlength="80"></label><label>Ghi chú<textarea name="note" maxlength="300"></textarea></label>' },
     'asset-types': { title: 'Loại tài sản', fields: '<label>Tên loại tài sản<input name="name" required maxlength="100"></label><label>Mã loại<input name="code" maxlength="40"></label><label>Thời gian khấu hao (tháng)<input name="lifeMonths" type="number" min="0" value="0"></label><label>Mô tả<textarea name="note" maxlength="300"></textarea></label>' },
     'moving-logs': { title: 'Điều chuyển tài sản', fields: `<label>Tài sản<select name="asset" required>${assetOptions}</select></label><label>Nơi đi<select name="from" required>${warehouseOptions}</select></label><label>Nơi đến<select name="to" required>${warehouseOptions}</select></label><label>Người thực hiện<input name="actor" maxlength="80"></label><label>Ngày di chuyển<input name="date" type="date" required></label><label>Ghi chú<textarea name="note" maxlength="300"></textarea></label>` },
-    'asset-fix': { title: 'Sửa chữa tài sản', fields: `<label>Tài sản<select name="asset" required>${assetOptions}</select></label><label>Nội dung lỗi<input name="issue" required maxlength="160"></label><label>Nhà cung cấp sửa chữa<select name="provider">${providerOptions}</select></label><label>Chi phí<input name="cost" type="number" min="0" value="0"></label><label>Ngày báo lỗi<input name="reportedAt" type="date" required></label><label>Ngày hoàn tất<input name="completedAt" type="date"></label><label>Trạng thái<select name="status"><option value="new">Mới báo</option><option value="processing">Đang sửa</option><option value="completed">Đã hoàn tất</option></select></label>` }
+    'asset-fix': { title: 'Sửa chữa tài sản', fields: `<label>Tài sản<select name="asset" required>${assetOptions}</select></label><label>Nội dung lỗi<input name="issue" required maxlength="160"></label><label>Nhà cung cấp sửa chữa<select name="provider">${providerOptions}</select></label><label>Chi phí<input name="cost" inputmode="numeric" value="0"></label><label>Phương thức thanh toán<select name="paymentMethod"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label><label>Ngày báo lỗi<input name="reportedAt" type="date" required></label><label>Ngày hoàn tất<input name="completedAt" type="date"></label><label>Trạng thái<select name="status"><option value="new">Mới báo</option><option value="processing">Đang sửa</option><option value="completed">Đã hoàn tất</option></select></label>` }
   };
   const config = configs[type];
   const statusLabels = { active: 'Đang sử dụng', stored: 'Trong kho', broken: 'Đang hỏng', disposed: 'Đã thanh lý', new: 'Mới báo', processing: 'Đang sửa', completed: 'Đã hoàn tất' };
   const recordSummary = (record) => {
-    if (type === 'assets') return `${record.code || 'Chưa có mã'} · ${record.assetType || 'Chưa phân loại'} · ${record.warehouse || 'Chưa xếp kho'} · SL ${record.quantity || 1} · ${statusLabels[record.status] || 'Chưa xác định'}`;
+    if (type === 'assets') return `${record.code || 'Chưa có mã'} · ${record.assetType || 'Chưa phân loại'} · ${record.warehouse || 'Chưa xếp kho'} · SL ${record.quantity || 1}${Number(record.purchaseAmount || 0) > 0 ? ` · ${Number(record.purchaseAmount).toLocaleString('vi-VN')} đ` : ''} · ${statusLabels[record.status] || 'Chưa xác định'}`;
     if (type === 'providers') return [record.taxCode && `MST ${record.taxCode}`, record.contact, record.phone, record.email].filter(Boolean).join(' · ') || 'Chưa có thông tin liên hệ';
     if (type === 'warehouses') return [record.code, record.address, record.manager && `Phụ trách: ${record.manager}`].filter(Boolean).join(' · ') || 'Chưa có thông tin kho';
     if (type === 'asset-types') return [record.code, Number(record.lifeMonths) > 0 && `Khấu hao ${record.lifeMonths} tháng`, record.note].filter(Boolean).join(' · ') || 'Chưa có mô tả';
@@ -1985,7 +2227,24 @@ function openAssetOperations(type) {
         const formElement = document.querySelector('[data-operation-form]');
         Object.entries(record).forEach(([key, value]) => { const field = formElement.elements[key]; if (field) field.value = value; });
         document.querySelector('[data-modal-cancel]').addEventListener('click', () => openAssetOperations(type));
-        formElement.addEventListener('submit', (event) => { event.preventDefault(); const form = new FormData(formElement); const next = { ...record, ...Object.fromEntries(form.entries()), quantity: Number(form.get('quantity') || 0), cost: parseMoney(form.get('cost')), updatedAt: new Date().toISOString() }; if (recordIndex >= 0) records[recordIndex] = next; else records.push(next); if (type === 'moving-logs') { const asset = (catalogs.assets || []).find((item) => item.code === next.asset || item.name === next.asset); if (asset) { asset.warehouse = next.to; asset.status = 'active'; } } if (type === 'asset-fix') { const asset = (catalogs.assets || []).find((item) => item.code === next.asset || item.name === next.asset); if (asset) asset.status = next.status === 'completed' ? 'active' : 'broken'; } persistCatalogs(); openAssetOperations(type); showToast('Đã lưu dữ liệu vận hành'); });
+        setupMoneyInputs(formElement);
+        formElement.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const submitButton = formElement.querySelector('[type="submit"]');
+          submitButton.disabled = true;
+          const form = new FormData(formElement);
+          const next = { ...record, ...Object.fromEntries(form.entries()), id: record.id || crypto.randomUUID(), quantity: Number(form.get('quantity') || 0), cost: parseMoney(form.get('cost')), purchaseAmount: parseMoney(form.get('purchaseAmount')), updatedAt: new Date().toISOString() };
+          try {
+            if (type === 'assets' && next.purchaseAmount > 0) await postFinancialEvent({ sourceType: 'asset-purchase', sourceId: next.id, title: `Mua tài sản - ${next.name}`, type: 'expense', amount: next.purchaseAmount, category: 'asset-purchase', method: next.paymentMethod });
+            if (type === 'asset-fix' && next.status === 'completed' && next.cost > 0) await postFinancialEvent({ sourceType: 'asset-repair', sourceId: next.id, title: `Sửa chữa tài sản - ${next.asset}`, type: 'expense', amount: next.cost, category: 'asset-repair', method: next.paymentMethod });
+            if (recordIndex >= 0) records[recordIndex] = next; else records.push(next);
+            if (type === 'moving-logs') { const asset = (catalogs.assets || []).find((item) => item.code === next.asset || item.name === next.asset); if (asset) { asset.warehouse = next.to; asset.status = 'active'; } }
+            if (type === 'asset-fix') { const asset = (catalogs.assets || []).find((item) => item.code === next.asset || item.name === next.asset); if (asset) asset.status = next.status === 'completed' ? 'active' : 'broken'; }
+            persistCatalogs();
+            openAssetOperations(type);
+            showToast(type === 'assets' && next.purchaseAmount > 0 || type === 'asset-fix' && next.status === 'completed' && next.cost > 0 ? 'Đã lưu và đồng bộ chi phí vào Sổ thu chi' : 'Đã lưu dữ liệu vận hành');
+          } catch (error) { submitButton.disabled = false; showToast(error.message); }
+        });
       });
     };
     document.querySelector('[data-operation-add]').addEventListener('click', () => openForm());
@@ -2366,7 +2625,7 @@ document.querySelectorAll('.sidebar a[href^="#"], .panel a[href^="#"], .footer a
   if (document.getElementById(target)) return;
   event.preventDefault();
   closeMobileSidebar();
-  const ownerOnlyTargets = new Set(['finance', 'cashflow', 'cashflow-report', 'commission', 'daily', 'profit', 'debts', 'payments', 'prepayments', 'deposit-ledger', 'general', 'users']);
+  const ownerOnlyTargets = new Set(['finance', 'cashflow', 'cashflow-report', 'commission', 'profit', 'debts', 'deposit-ledger', 'general', 'users']);
   if (currentUserRole !== 'owner' && ownerOnlyTargets.has(target)) { showToast('Chỉ Chủ được truy cập mục này'); return; }
   if (target === 'buildings') {
     openBuildingManager();
@@ -2408,11 +2667,15 @@ document.querySelectorAll('.sidebar a[href^="#"], .panel a[href^="#"], .footer a
     openCommissionManager();
     return;
   }
-  if (target === 'prepayments' || target === 'deposit-ledger') {
-    openFinancialSummary(target);
+  if (target === 'deposit-ledger') {
+    openDepositSummary();
     return;
   }
-  if (target === 'daily' || target === 'profit' || target === 'debts' || target === 'payments') {
+  if (target === 'payments') {
+    openPaymentSchedule();
+    return;
+  }
+  if (target === 'profit' || target === 'debts') {
     openFinancialReport(target);
     return;
   }
