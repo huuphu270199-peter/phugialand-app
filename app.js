@@ -1,3 +1,7 @@
+const frontendCacheName = 'phu-gia-land-v65';
+if ('caches' in window) caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('phu-gia-land-') && key !== frontendCacheName).map((key) => caches.delete(key)))).catch(() => {});
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=65').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+
 const staffSensitiveStorageKeys = ['nvp-cashflow', 'nvp-commissions', 'nvp-deposit-ledger', 'nvp-users', 'nvp-smart-home-config'];
 let currentUserRole = sessionStorage.getItem('nvp-user-role') || '';
 let currentUserName = sessionStorage.getItem('nvp-user-name') || '';
@@ -2806,6 +2810,5 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=63').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
-}
+document.documentElement.dataset.appVersion = '65';
+

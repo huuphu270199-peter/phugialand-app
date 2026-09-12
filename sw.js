@@ -1,33 +1,33 @@
-const CACHE_NAME = 'phu-gia-land-v64';
+const CACHE_NAME = 'phu-gia-land-v65';
 const isTenantPortal = self.location.hostname.startsWith('tenant.') || self.location.hostname.startsWith('tentant.');
 const APP_SHELL = isTenantPortal ? [
   './',
-  './tenant.html',
-  './tenant.css',
-  './vietnamese-typography.css?v=64',
-  './tenant.js',
-  './tenant.webmanifest',
+  './tenant.html?v=65',
+  './tenant.css?v=65',
+  './vietnamese-typography.css?v=65',
+  './tenant.js?v=65',
+  './tenant.webmanifest?v=65',
   './assets/pwa-icon-192.png',
   './assets/pwa-icon-512.png',
   './assets/Logo BPG.jpg'
 ] : [
   './',
-  './index.html',
-  './styles.css',
-  './modal.css',
-  './enhancements.css',
-  './redesign.css',
-  './crud.css',
-  './utility-manager.css',
-  './vietnamese-typography.css?v=64',
-  './building-form.css',
-  './building-manager.css',
-  './homestay.css',
-  './customer-manager.css',
-  './customer-detail.css',
-  './vp-theme.css',
-  './app.js',
-  './manifest.webmanifest',
+  './index.html?v=65',
+  './styles.css?v=65',
+  './modal.css?v=65',
+  './enhancements.css?v=65',
+  './redesign.css?v=65',
+  './crud.css?v=65',
+  './utility-manager.css?v=65',
+  './vietnamese-typography.css?v=65',
+  './building-form.css?v=65',
+  './building-manager.css?v=65',
+  './homestay.css?v=65',
+  './customer-manager.css?v=65',
+  './customer-detail.css?v=65',
+  './vp-theme.css?v=65',
+  './app.js?v=65',
+  './manifest.webmanifest?v=65',
   './assets/pwa-icon-192.png',
   './assets/pwa-icon-512.png',
   './assets/Logo BPG.jpg'
@@ -54,9 +54,11 @@ self.addEventListener('fetch', (event) => {
   }
   const isAppCode = event.request.mode === 'navigate' || /\.(?:html|js|css)$/i.test(requestUrl.pathname);
   if (isAppCode) {
-    event.respondWith(fetch(event.request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+    event.respondWith(fetch(event.request, { cache: 'no-store' }).then((response) => {
+      if (response.ok && !response.redirected) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+      }
       return response;
     }).catch(() => caches.match(event.request).then((cached) => cached || caches.match(isTenantPortal ? './tenant.html' : './index.html'))));
     return;
