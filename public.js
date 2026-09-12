@@ -46,7 +46,7 @@ function renderApartments(apartments) {
     return;
   }
   apartmentList.innerHTML = apartments.map((apartment) => {
-    const detail = apartment.propertyType === 'whole-building' ? '<strong>Cho thuê nguyên căn</strong>' : apartment.propertyType === 'office' ? '<strong>Không gian văn phòng</strong>' : apartment.propertyType === 'shophouse' ? '<strong>Không gian kinh doanh</strong>' : apartment.propertyType === 'homestay' ? `<strong>Thuê nguyên phòng · Sức chứa ${apartment.beds || 0} giường</strong>` : apartment.propertyType === 'shared-room' ? `<strong>${apartment.beds || 0}</strong> giường cho thuê riêng` : '<strong>Cho thuê căn hộ</strong>';
+    const detail = apartment.propertyType === 'whole-building' ? '<strong>Cho thuê nguyên căn</strong>' : apartment.propertyType === 'office' ? '<strong>Không gian văn phòng</strong>' : apartment.propertyType === 'shophouse' ? '<strong>Không gian kinh doanh</strong>' : apartment.propertyType === 'homestay' ? `<strong>Thuê nguyên phòng · Sức chứa ${apartment.beds || 0} giường</strong>` : apartment.propertyType === 'shared-room' ? `<strong>${apartment.availableBeds ?? apartment.beds ?? 0}</strong>/${apartment.beds || 0} giường còn trống` : '<strong>Cho thuê căn hộ</strong>';
     const media = Array.isArray(apartment.media) ? apartment.media : [];
     const video = media.find((item) => item.kind === 'video');
     const image = apartment.image || media.find((item) => item.kind === 'image')?.url;

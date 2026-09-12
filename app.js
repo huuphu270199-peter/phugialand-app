@@ -1,6 +1,6 @@
-const frontendCacheName = 'phu-gia-land-v67';
+const frontendCacheName = 'phu-gia-land-v76';
 if ('caches' in window) caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('phu-gia-land-') && key !== frontendCacheName).map((key) => caches.delete(key)))).catch(() => {});
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=67').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=76').then((registration) => registration.update()).catch((error) => console.warn('Service worker registration failed:', error)));
 
 const staffSensitiveStorageKeys = ['nvp-cashflow', 'nvp-commissions', 'nvp-deposit-ledger', 'nvp-users', 'nvp-smart-home-config'];
 let currentUserRole = sessionStorage.getItem('nvp-user-role') || '';
@@ -42,6 +42,7 @@ const stateKeys = [storageKey, leadStorageKey, reservationStorageKey, taskStorag
 localStorage.removeItem('nvp-contracts');
 const pendingSyncKeys = new Set();
 let syncTimeout;
+let syncPromise = Promise.resolve();
 let administrativeUnitsPromise;
 let bankDirectoryPromise;
 const fallbackBankDirectory = [
@@ -207,6 +208,13 @@ const propertyTypes = {
 };
 const bedDisplayPropertyTypes = new Set(['homestay', 'shared-room']);
 const rentableBedPropertyTypes = new Set(['shared-room']);
+const rentalTypeLabels = {
+  'whole-building-long-term': 'Thuê nguyên căn · dài hạn',
+  'floor-long-term': 'Thuê một tầng · dài hạn',
+  'room-long-term': 'Thuê một phòng · dài hạn',
+  'bed-long-term': 'Thuê một giường · dài hạn',
+  'homestay-short-term': 'Homestay một phòng · ngắn hạn'
+};
 const catalogConfigs = {
   vehicles: ['Phương tiện', 'Biển số hoặc tên phương tiện'],
   assets: ['Tài sản', 'Tên tài sản'],
@@ -352,7 +360,7 @@ function updateDashboard() {
   if (occupancyCard) occupancyCard.textContent = `${occupancy}%`;
   const currentMonth = new Date().toISOString().slice(0, 7);
   const completedBookings = bookings.filter((booking) => booking.status === 'checkedOut' && String(booking.checkedOutAt || booking.checkOut || '').slice(0, 7) === currentMonth);
-  const monthlyInvoices = invoices.filter((invoice) => invoice.approvalStatus !== 'pending' && invoice.type !== 'booking' && String(invoice.createdAt || '').slice(0, 7) === currentMonth);
+  const monthlyInvoices = invoices.filter((invoice) => invoice.approvalStatus !== 'pending' && invoice.type !== 'booking' && String(invoice.month || invoice.createdAt || '').slice(0, 7) === currentMonth);
   const invoiceTotals = {
     rent: monthlyInvoices.reduce((total, invoice) => total + Number(invoice.type === 'rent' ? invoice.amount : invoice.billingLines?.rent || 0), 0) + completedBookings.reduce((total, booking) => total + Number(booking.amount || 0), 0),
     electricity: monthlyInvoices.reduce((total, invoice) => total + Number(invoice.type === 'electricity' ? invoice.amount : invoice.billingLines?.electricity || 0), 0),
@@ -450,6 +458,15 @@ function parseFloorRateOverrides(value, fieldLabel) {
   return rates;
 }
 
+function addFormGuidance(form, guidance) {
+  Object.entries(guidance).forEach(([name, text]) => {
+    const field = form.elements.namedItem(name);
+    const label = field?.closest('label');
+    if (!label || label.querySelector('[data-field-guidance]')) return;
+    label.insertAdjacentHTML('beforeend', `<small class="form-hint" data-field-guidance>${text}</small>`);
+  });
+}
+
 function setupBillingSettingsForm(form) {
   const field = (name) => form.elements.namedItem(name);
   const label = (name) => field(name)?.closest('label');
@@ -458,7 +475,7 @@ function setupBillingSettingsForm(form) {
   const groups = [
     ['Thu tiền', 'Phương thức nhận tiền và hạn thanh toán của hóa đơn hằng tháng.', ['debtAccount', 'paymentDay']],
     ['Tài khoản nhận tiền', 'Chọn ngân hàng và nhập số tài khoản để tạo VietQR trên hóa đơn đã duyệt.', ['bankName', 'bankNumber', 'bankHolder']],
-    ['Điện, nước và phí định kỳ', 'Mức tại căn hộ được ưu tiên, sau đó đến mức theo tầng, cuối cùng là mức mặc định của tòa nhà.', ['electricityRate', 'electricityFloorRates', 'waterBillingMode', 'waterRate', 'waterFixedAmount', 'waterFloorRates']]
+    ['Điện, nước và phí định kỳ', 'Chọn đúng cấp đồng hồ nước trước khi ghi chỉ số để hệ thống phân bổ đúng vào hóa đơn.', ['electricityRate', 'electricityFloorRates', 'waterBillingMode', 'waterRate', 'waterFixedAmount', 'waterFloorRates']]
   ];
   groups.forEach(([title, description, names]) => {
     const heading = document.createElement('div');
@@ -475,10 +492,10 @@ function setupBillingSettingsForm(form) {
     bankHolder: 'Không bắt buộc để tạo QR, nhưng nên nhập để người trả tiền đối chiếu.',
     electricityRate: 'Mức mặc định khi căn hộ và tầng chưa có giá riêng.',
     electricityFloorRates: 'Không bắt buộc. Ví dụ: 1:3.500, 2:4.000, B1:3.200.',
-    waterBillingMode: 'Theo m³ dùng nhật ký đồng hồ; mức cố định thu đều mỗi tháng.',
-    waterRate: 'Mức mặc định khi tính nước theo chỉ số đồng hồ.',
-    waterFixedAmount: 'Mức mặc định khi căn hộ và tầng chưa có mức riêng.',
-    waterFloorRates: 'Không bắt buộc. Ví dụ: 1:150.000, 2:180.000.'
+    waterBillingMode: 'Đồng hồ riêng tính từng căn; đồng hồ tầng chia tổng tiền đều cho các căn đang thuê; mức cố định thu theo từng căn.',
+    waterRate: 'Đơn giá dùng cho đồng hồ riêng từng căn hoặc đồng hồ chung tầng.',
+    waterFixedAmount: 'Số tiền thu cho mỗi căn mỗi tháng khi chưa có mức riêng.',
+    waterFloorRates: 'Mức cố định của mỗi căn theo tầng. Ví dụ: tầng 1 thu 150.000 đ/căn.'
   };
   Object.entries(help).forEach(([name, text]) => label(name)?.insertAdjacentHTML('beforeend', `<small class="form-hint">${text}</small>`));
   label('debtAccount').firstChild.textContent = 'Phương thức thu tiền';
@@ -487,7 +504,7 @@ function setupBillingSettingsForm(form) {
   field('debtAccount').options[2].textContent = 'Tiền mặt';
   label('paymentDay').firstChild.textContent = 'Hạn thanh toán hằng tháng';
   label('waterRate').firstChild.textContent = 'Đơn giá nước mặc định (đ/m³)';
-  label('waterFixedAmount').firstChild.textContent = 'Mức nước cố định mặc định (đ/tháng)';
+  label('waterFixedAmount').firstChild.textContent = 'Mức cố định mỗi căn (đ/tháng)';
   label('bankName').classList.add('full-field', 'bank-name-field');
   label('bankBin').hidden = true;
   const bankFields = ['bankName', 'bankNumber', 'bankHolder'];
@@ -510,7 +527,7 @@ function openBuildingForm(buildingToEdit = null) {
   const services = building.services || [];
   const settings = building.settings || {};
   const serviceItems = services.length
-    ? services.map((service, index) => `<div class="service-item"><div><strong>${escapeHtml(service.name)}</strong><small>${escapeHtml(service.feeType)} · ${escapeHtml(service.unitType)}</small></div><button type="button" data-service-delete="${index}" aria-label="Xóa dịch vụ">×</button></div>`).join('')
+    ? services.map((service, index) => { const targets = Array.isArray(service.scopeTargets) ? service.scopeTargets : []; const scope = service.scopeType === 'floor' ? `Tầng ${targets.join(', ')}` : service.scopeType === 'apartment' ? targets.join(', ') : `Toàn bộ ${building.name || 'tòa nhà hiện tại'}`; const unit = service.allocationBasis === 'contract' ? 'hợp đồng' : service.allocationBasis === 'person' ? 'người' : 'phòng'; const billing = service.billingMode === 'monthly' ? `${Number(service.amount || 0).toLocaleString('vi-VN')} đ/${unit}/tháng` : service.billingMode === 'manual' ? 'Nhập khi phát sinh' : service.unitType || 'Chưa cấu hình cách thu'; return `<div class="service-item"><div><strong>${escapeHtml(service.name)}</strong><small>${escapeHtml(service.feeType)} · ${escapeHtml(billing)} · ${escapeHtml(scope)}</small></div><button type="button" data-service-delete="${index}" aria-label="Xóa dịch vụ">×</button></div>`; }).join('')
     : '<p class="empty-state">Chưa có dịch vụ nào</p>';
     openModal('Tòa nhà', `<form class="building-form building-form-wide" data-building-form>
     <section class="form-section"><div class="form-section-title"><strong>Thông tin cơ bản</strong><label class="inline-toggle">Hoạt động<input name="active" type="checkbox" ${building.active !== false ? 'checked' : ''}><span></span></label></div><div class="form-grid"><label><span class="field-label">Tên tòa nhà <b>*</b></span><input name="name" required maxlength="80" value="${escapeHtml(building.name || '')}" placeholder="Ví dụ: Vạn Phúc Garden"></label><label>Tên viết tắt/Mã tòa <input name="code" maxlength="30" value="${escapeHtml(building.code || '')}" placeholder="Nhập mã viết tắt"></label><label>Loại hình khai thác<select name="listingType"><option value="mixed" ${!building.listingType || building.listingType === 'mixed' ? 'selected' : ''}>Nhiều loại hình trong tòa</option><option value="whole-building" ${building.listingType === 'whole-building' ? 'selected' : ''}>Tòa nhà nguyên căn</option></select></label></div></section>
@@ -532,7 +549,7 @@ function openBuildingForm(buildingToEdit = null) {
     buildingForm.querySelector('[name="floors"]')?.closest('label').classList.add('basic-info-wide');
     listingTypeField?.closest('label').insertAdjacentHTML('beforeend', '<small class="form-hint">Chọn nguyên căn khi toàn bộ tòa nhà được cho thuê như một sản phẩm.</small>');
     if (waterRateField) {
-      waterRateField.closest('label').insertAdjacentHTML('afterend', `<label>Chế độ tiền nước<select name="waterBillingMode"><option value="metered" ${settings.waterBillingMode !== 'fixed' ? 'selected' : ''}>Theo m³</option><option value="fixed" ${settings.waterBillingMode === 'fixed' ? 'selected' : ''}>Mức cố định</option></select></label><label>Mức cố định mặc định (đ/tháng)<input name="waterFixedAmount" type="number" min="0" value="${Number(settings.waterFixedAmount || 0)}"></label><label>Mức nước theo tầng<input name="waterFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.waterFloorRates || {}).map(([floor, amount]) => `${floor}:${Number(amount).toLocaleString('vi-VN')}`).join(', '))}" placeholder="Ví dụ: 1:150.000, 2:180.000"></label><label>Giá điện theo tầng (đ/kWh)<input name="electricityFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.electricityFloorRates || {}).map(([floor, amount]) => `${floor}:${Number(amount).toLocaleString('vi-VN')}`).join(', '))}" placeholder="Ví dụ: 1:3.500, 2:4.000"></label>`);
+      waterRateField.closest('label').insertAdjacentHTML('afterend', `<label>Chế độ tiền nước<select name="waterBillingMode"><option value="metered" ${!['fixed', 'floor-metered'].includes(settings.waterBillingMode) ? 'selected' : ''}>Đồng hồ riêng từng căn</option><option value="floor-metered" ${settings.waterBillingMode === 'floor-metered' ? 'selected' : ''}>Đồng hồ chung theo tầng · chia đều</option><option value="fixed" ${settings.waterBillingMode === 'fixed' ? 'selected' : ''}>Mức cố định từng căn</option></select></label><label>Mức cố định mặc định (đ/tháng)<input name="waterFixedAmount" type="number" min="0" value="${Number(settings.waterFixedAmount || 0)}"></label><label>Mức cố định mỗi căn theo tầng<input name="waterFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.waterFloorRates || {}).map(([floor, amount]) => `${floor}:${Number(amount).toLocaleString('vi-VN')}`).join(', '))}" placeholder="Ví dụ: 1:150.000, 2:180.000"></label><label>Giá điện theo tầng (đ/kWh)<input name="electricityFloorRates" maxlength="300" value="${escapeHtml(Object.entries(settings.electricityFloorRates || {}).map(([floor, amount]) => `${floor}:${Number(amount).toLocaleString('vi-VN')}`).join(', '))}" placeholder="Ví dụ: 1:3.500, 2:4.000"></label>`);
     }
     setupBankFields(buildingForm, settings.bankName || '', settings.bankBin || '');
     setupBillingSettingsForm(buildingForm);
@@ -547,7 +564,7 @@ function openBuildingForm(buildingToEdit = null) {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       const apartmentTotal = Number(form.get('apartments') || 0);
-      const waterBillingMode = form.get('waterBillingMode') === 'fixed' ? 'fixed' : 'metered';
+      const waterBillingMode = ['metered', 'floor-metered', 'fixed'].includes(form.get('waterBillingMode')) ? form.get('waterBillingMode') : 'metered';
       const waterFixedAmount = parseMoney(form.get('waterFixedAmount'));
       const debtAccount = ['bank', 'cash'].includes(form.get('debtAccount')) ? form.get('debtAccount') : '';
       const paymentDay = Number(form.get('paymentDay'));
@@ -561,7 +578,7 @@ function openBuildingForm(buildingToEdit = null) {
       let waterFloorRates;
       let electricityFloorRates;
       try {
-        waterFloorRates = waterBillingMode === 'fixed' ? parseFloorRateOverrides(form.get('waterFloorRates'), 'Mức nước theo tầng') : {};
+        waterFloorRates = parseFloorRateOverrides(form.get('waterFloorRates'), 'Mức cố định mỗi căn theo tầng');
         electricityFloorRates = parseFloorRateOverrides(form.get('electricityFloorRates'), 'Giá điện theo tầng');
       } catch (error) {
         showToast(error.message);
@@ -587,7 +604,7 @@ function openBuildingForm(buildingToEdit = null) {
       nextBuilding.settings.bankHolder = debtAccount === 'bank' ? bankHolder : '';
       nextBuilding.settings.waterBillingMode = waterBillingMode;
       nextBuilding.settings.waterFixedAmount = waterFixedAmount;
-      nextBuilding.settings.waterRate = waterBillingMode === 'metered' ? parseMoney(form.get('waterRate')) : 0;
+      nextBuilding.settings.waterRate = parseMoney(form.get('waterRate'));
       nextBuilding.settings.waterFloorRates = waterFloorRates;
       nextBuilding.settings.electricityFloorRates = electricityFloorRates;
       nextBuilding.settings.managerName = String(form.get('managerName') || '').trim();
@@ -606,13 +623,55 @@ function openBuildingForm(buildingToEdit = null) {
 }
 
 function openServiceForm(building) {
-  openModal('Phí dịch vụ', `<form class="building-form service-form" data-service-form><div class="form-grid"><label>Tên dịch vụ <b>*</b><input name="name" required maxlength="80" placeholder="Tên dịch vụ"></label><label>Loại phí <b>*</b><select name="feeType" required><option value="">Chọn</option><option>Điện</option><option>Nước</option><option>Phí quản lý</option><option>Dịch vụ khác</option></select></label><label>Loại đơn giá <b>*</b><select name="unitType" required><option value="">Chọn</option><option>Theo số lượng</option><option>Theo căn hộ</option><option>Cố định</option></select></label><label>Thuế suất <b>*</b><select name="tax" required><option value="">Chọn</option><option>Không chịu thuế</option><option>5%</option><option>8%</option><option>10%</option></select></label><label>Tòa nhà sử dụng <b>*</b><select name="building" required><option value="${escapeHtml(building.name || '')}">${escapeHtml(building.name || 'Tòa nhà hiện tại')}</option></select></label><label class="full-field">Mô tả<textarea name="description" maxlength="300" placeholder="Mô tả"></textarea></label></div><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">Lưu</button></div></form>`, () => {
+  const floors = getBuildingFloors(building);
+  const apartments = Array.isArray(building.apartments) ? building.apartments : [];
+  openModal('Phí dịch vụ', `<form class="building-form service-form" data-service-form><div class="entity-summary">Thiết lập khoản thu cho <strong>${escapeHtml(building.name || 'tòa nhà hiện tại')}</strong>.</div><div class="form-grid"><label>Tên dịch vụ <b>*</b><input name="name" required maxlength="80" placeholder="Ví dụ: Phí quản lý, Internet, vệ sinh"><small class="form-hint">Tên này được hiển thị trên hóa đơn.</small></label><label>Loại phí <b>*</b><select name="feeType" required><option value="">Chọn</option><option>Phí quản lý</option><option>Dịch vụ khác</option></select><small class="form-hint">Chọn Phí quản lý cho chi phí vận hành; các khoản còn lại chọn Dịch vụ khác.</small></label><label>Cách tính phí <b>*</b><select name="billingMode" required><option value="monthly">Thu tự động hằng tháng</option><option value="manual">Nhập khi phát sinh</option></select><small class="form-hint" data-service-billing-hint></small></label><label data-service-amount-field>Số tiền mỗi căn/tháng <b>*</b><input name="amount" inputmode="numeric" required value="0"><small class="form-hint">Mỗi căn đang thuê trong phạm vi sẽ chịu số tiền này.</small></label><label>Phạm vi áp dụng <b>*</b><select name="scopeType" required><option value="building">Toàn bộ tòa nhà hiện tại</option><option value="floor" ${floors.length ? '' : 'disabled'}>Theo tầng</option><option value="apartment" ${apartments.length ? '' : 'disabled'}>Theo căn hộ</option></select><small class="form-hint" data-service-scope-hint></small></label><fieldset class="full-field service-scope-field" data-service-scope-field hidden><legend data-service-scope-title>Đối tượng áp dụng</legend><div class="service-scope-options" data-service-scope-options></div><small class="form-hint">Có thể chọn nhiều tầng hoặc căn hộ.</small></fieldset><label class="full-field">Mô tả<textarea name="description" maxlength="300" placeholder="Thông tin bổ sung"></textarea><small class="form-hint">Ghi chú giúp quản lý nhận biết khoản phí, không bắt buộc.</small></label></div><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">Lưu</button></div></form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', () => openBuildingForm(building));
-    document.querySelector('[data-service-form]').addEventListener('submit', (event) => {
+    const serviceForm = document.querySelector('[data-service-form]');
+    const scopeTypeField = serviceForm.elements.scopeType;
+    const scopeField = serviceForm.querySelector('[data-service-scope-field]');
+    const scopeTitle = serviceForm.querySelector('[data-service-scope-title]');
+    const scopeOptions = serviceForm.querySelector('[data-service-scope-options]');
+    const scopeHint = serviceForm.querySelector('[data-service-scope-hint]');
+    const billingModeField = serviceForm.elements.billingMode;
+    const billingHint = serviceForm.querySelector('[data-service-billing-hint]');
+    const amountField = serviceForm.elements.amount;
+    const amountContainer = serviceForm.querySelector('[data-service-amount-field]');
+    amountContainer.insertAdjacentHTML('afterend', '<label data-service-allocation-field>Đơn vị tính phí <b>*</b><select name="allocationBasis"><option value="contract">Mỗi hợp đồng · chỉ thu một lần</option><option value="apartment" selected>Mỗi phòng · chia đều nếu phòng nhiều giường</option><option value="person">Mỗi người đang ở · thu đủ từng người</option></select><small class="form-hint">Quyết định khoản phí được nhân theo hợp đồng, phòng hay số người thực tế.</small></label>');
+    const allocationContainer = serviceForm.querySelector('[data-service-allocation-field]');
+    const updateBillingMode = () => {
+      const monthly = billingModeField.value === 'monthly';
+      amountContainer.hidden = !monthly;
+      allocationContainer.hidden = !monthly;
+      amountField.required = monthly;
+      billingHint.textContent = monthly ? 'Tự cộng vào hóa đơn tháng của căn đang thuê.' : 'Không tự cộng; nhập số tiền khi lập hoặc duyệt hóa đơn.';
+    };
+    const renderScopeOptions = () => {
+      const scopeType = scopeTypeField.value;
+      const options = scopeType === 'floor' ? floors : scopeType === 'apartment' ? apartments.map((apartment) => apartment.name).filter(Boolean) : [];
+      scopeField.hidden = scopeType === 'building';
+      scopeTitle.textContent = scopeType === 'floor' ? 'Chọn tầng áp dụng' : 'Chọn căn hộ áp dụng';
+      scopeHint.textContent = scopeType === 'building' ? 'Áp dụng cho mọi căn đang thuê trong tòa này.' : scopeType === 'floor' ? 'Chỉ áp dụng cho căn đang thuê thuộc các tầng được chọn.' : 'Chỉ áp dụng cho các căn được chọn.';
+      scopeOptions.innerHTML = options.map((value) => `<label><input type="checkbox" name="scopeTargets" value="${escapeHtml(value)}">${scopeType === 'floor' ? 'Tầng ' : ''}${escapeHtml(value)}</label>`).join('');
+    };
+    scopeTypeField.addEventListener('change', renderScopeOptions);
+    billingModeField.addEventListener('change', updateBillingMode);
+    renderScopeOptions();
+    updateBillingMode();
+    setupMoneyInputs(serviceForm);
+    serviceForm.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
+      const scopeType = form.get('scopeType');
+      const scopeTargets = scopeType === 'building' ? [] : form.getAll('scopeTargets');
+      const billingMode = form.get('billingMode');
+      const amount = billingMode === 'monthly' ? parseMoney(form.get('amount')) : 0;
+      const name = form.get('name').trim();
+      if (!name) { showToast('Hãy nhập tên dịch vụ'); return; }
+      if (scopeType !== 'building' && !scopeTargets.length) { showToast('Hãy chọn ít nhất một đối tượng áp dụng'); return; }
+      if (billingMode === 'monthly' && amount <= 0) { showToast('Số tiền hằng tháng phải lớn hơn 0'); return; }
       building.services = building.services || [];
-      building.services.push({ name: form.get('name').trim(), feeType: form.get('feeType'), unitType: form.get('unitType'), tax: form.get('tax'), description: form.get('description').trim() });
+      building.services.push({ id: crypto.randomUUID(), name, feeType: form.get('feeType'), billingMode, amount, allocationBasis: billingMode === 'monthly' ? form.get('allocationBasis') : 'manual', scopeType, scopeTargets, description: form.get('description').trim() });
       persistBuildings();
       openBuildingForm(building);
       showToast('Đã thêm dịch vụ tòa nhà');
@@ -713,7 +772,7 @@ function openApartmentForm(apartmentIndex = -1) {
     <label>Chỉ số bàn giao điện (kWh)<input name="electricityBaseline" type="number" min="0" step="0.01" value="${Number(apartment?.electricityBaseline || 0)}"><small class="form-hint">Chốt khi khách bắt đầu thuê; tiền điện chỉ tính phần tăng sau mốc này.</small></label>
     <label>Tiền thuê hàng tháng<input name="rentAmount" type="number" min="0" value="${Number(apartment?.rentAmount || 0)}" placeholder="Số tiền nhà mỗi tháng"></label>
     <label>Giá điện riêng phòng/văn phòng (đ/kWh)<input name="electricityRate" type="number" min="0" value="${Number(apartment?.electricityRate || 0)}" placeholder="Để 0 để dùng giá theo tầng/tòa"></label>
-    <label>Cách tính nước<select name="waterBillingMode"><option value="metered" ${apartment?.waterBillingMode !== 'fixed' ? 'selected' : ''}>Theo m³</option><option value="fixed" ${apartment?.waterBillingMode === 'fixed' ? 'selected' : ''}>Mức cố định</option></select></label>
+    <label>Cách tính nước<select name="waterBillingMode" ${building.settings?.waterBillingMode === 'floor-metered' ? 'disabled' : ''}><option value="metered" ${apartment?.waterBillingMode !== 'fixed' ? 'selected' : ''}>Đồng hồ riêng của căn</option><option value="fixed" ${apartment?.waterBillingMode === 'fixed' ? 'selected' : ''}>Mức cố định của căn</option><option value="floor-metered" ${building.settings?.waterBillingMode === 'floor-metered' ? 'selected' : ''}>Theo đồng hồ chung tầng</option></select></label>
     <label>Giá nước riêng (đ/m³)<input name="waterRate" type="number" min="0" value="${Number(apartment?.waterRate || 0)}" placeholder="Để 0 để dùng giá theo tầng/tòa"></label>
     <label>Tiền nước cố định (đ/tháng)<input name="waterFixedAmount" type="number" min="0" value="${Number(apartment?.waterFixedAmount || 0)}" placeholder="Áp dụng khi chọn mức cố định"></label>
     <label>Tên phí dịch vụ<input name="serviceFeeLabel" maxlength="80" value="${escapeHtml(apartment?.serviceFeeLabel || 'Phí dịch vụ')}" placeholder="Ví dụ: Internet, vệ sinh"></label>
@@ -726,14 +785,38 @@ function openApartmentForm(apartmentIndex = -1) {
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
     const formElement = document.querySelector('[data-apartment-form]');
+    formElement.elements.electricityRate.closest('label').insertAdjacentHTML('beforebegin', `<label>Cách tính điện<select name="electricityBillingMode"><option value="metered" ${apartment?.electricityBillingMode !== 'fixed' ? 'selected' : ''}>Theo công tơ</option><option value="fixed" ${apartment?.electricityBillingMode === 'fixed' ? 'selected' : ''}>Cố định theo phòng</option></select><small class="form-hint">Áp dụng cho hợp đồng nguyên căn, tầng hoặc phòng; phòng giường có quy tắc riêng bên dưới.</small></label><label data-electricity-fixed-field>Tiền điện cố định phòng/tháng<input name="electricityFixedAmount" type="number" min="0" value="${Number(apartment?.electricityFixedAmount || 0)}"></label>`);
+    formElement.elements.serviceFee.closest('label').insertAdjacentHTML('afterend', `<label data-occupant-billing-field>Điện phòng nhiều giường<select name="electricityOccupantBilling"><option value="equal-occupants" ${apartment?.electricityOccupantBilling !== 'per-person-fixed' ? 'selected' : ''}>Chia đều người đang ở</option><option value="per-person-fixed" ${apartment?.electricityOccupantBilling === 'per-person-fixed' ? 'selected' : ''}>Mức cố định mỗi người</option></select><small class="form-hint">Chia đều dùng tổng tiền điện của phòng; cố định thu đúng mức dưới đây cho từng khách.</small></label><label data-occupant-billing-field data-electricity-person-field>Tiền điện cố định mỗi người<input name="electricityPerPersonAmount" type="number" min="0" value="${Number(apartment?.electricityPerPersonAmount || 0)}"></label><label data-occupant-billing-field>Nước phòng nhiều giường<select name="waterOccupantBilling"><option value="equal-occupants" ${apartment?.waterOccupantBilling !== 'per-person-fixed' ? 'selected' : ''}>Chia đều người đang ở</option><option value="per-person-fixed" ${apartment?.waterOccupantBilling === 'per-person-fixed' ? 'selected' : ''}>Mức cố định mỗi người</option></select><small class="form-hint">Chia đều tổng nước đã xác định cho phòng; hoặc thu một mức cố định trên mỗi khách.</small></label><label data-occupant-billing-field data-water-person-field>Tiền nước cố định mỗi người<input name="waterPerPersonAmount" type="number" min="0" value="${Number(apartment?.waterPerPersonAmount || 0)}"></label>`);
+    addFormGuidance(formElement, {
+      name: 'Mã dùng để nhận biết căn trên khách hàng, hóa đơn và công tơ.',
+      title: 'Tiêu đề dùng khi hiển thị căn trên trang cho thuê.',
+      rentAmount: 'Tự đưa vào hóa đơn tháng khi căn có khách đang thuê.',
+      electricityRate: 'Nhập 0 để dùng giá theo tầng, sau đó đến giá mặc định của tòa.',
+      waterBillingMode: building.settings?.waterBillingMode === 'floor-metered' ? 'Tòa đang dùng đồng hồ chung tầng nên căn này nhận phần tiền được chia theo tầng.' : 'Chọn đồng hồ riêng hoặc mức cố định cho căn.',
+      waterRate: 'Chỉ dùng khi căn có đồng hồ nước riêng; nhập 0 để dùng giá của tòa.',
+      waterFixedAmount: 'Chỉ dùng khi căn thu cố định; nhập 0 để dùng mức theo tầng hoặc của tòa.',
+      serviceFee: 'Khoản cũ dành riêng cho căn; danh mục Phí dịch vụ của tòa được ưu tiên nếu có.',
+      propertyType: 'Quyết định cách căn được hiển thị và quản lý đặt phòng.',
+      status: 'Căn đang thuê hoặc đang cọc sẽ không được xem là căn trống.'
+    });
     const propertyTypeField = formElement.elements.propertyType;
     const bedCountField = formElement.querySelector('[data-bed-count-field]');
+    const updateBillingVisibility = () => {
+      formElement.elements.electricityFixedAmount.closest('label').hidden = formElement.elements.electricityBillingMode.value !== 'fixed';
+      formElement.querySelector('[data-electricity-person-field]').hidden = propertyTypeField.value !== 'shared-room' || formElement.elements.electricityOccupantBilling.value !== 'per-person-fixed';
+      formElement.querySelector('[data-water-person-field]').hidden = propertyTypeField.value !== 'shared-room' || formElement.elements.waterOccupantBilling.value !== 'per-person-fixed';
+    };
     const updateBedCountField = () => {
       const propertyType = propertyTypeField.value;
       bedCountField.hidden = !bedDisplayPropertyTypes.has(propertyType);
+      formElement.querySelectorAll('[data-occupant-billing-field]').forEach((field) => { field.hidden = propertyType !== 'shared-room'; });
       bedCountField.querySelector('[data-bed-count-hint]').textContent = propertyType === 'homestay' ? 'Chỉ mô tả sức chứa; Homestay vẫn cho thuê nguyên phòng.' : 'Số giường có thể cho từng khách thuê riêng.';
+      updateBillingVisibility();
     };
     propertyTypeField.addEventListener('change', updateBedCountField);
+    formElement.elements.electricityBillingMode.addEventListener('change', updateBillingVisibility);
+    formElement.elements.electricityOccupantBilling.addEventListener('change', updateBillingVisibility);
+    formElement.elements.waterOccupantBilling.addEventListener('change', updateBillingVisibility);
     updateBedCountField();
     const meterSelect = formElement.querySelector('[data-meter-select]');
     const meterStatus = formElement.querySelector('[data-meter-select-status]');
@@ -752,12 +835,21 @@ function openApartmentForm(apartmentIndex = -1) {
       meterSelect.innerHTML = currentMeterId ? `<option value="${escapeHtml(currentMeterId)}">${escapeHtml(currentMeterId)}</option>` : '<option value="">Chưa gán công tơ</option>';
       meterStatus.textContent = error.message || 'Không thể tải công tơ từ Tuya.';
     });
-    fetch(`${apiBaseUrl}/smart-home/current-readings`).then(async (response) => {
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Không thể đọc chỉ số hiện tại');
-      const reading = payload.readings.find((item) => item.meterId === currentMeterId);
-      if (reading) formElement.querySelector('[data-current-meter-reading]').value = reading.current;
-    }).catch(() => {});
+    const updateCurrentMeterReading = async () => {
+      const readingField = formElement.querySelector('[data-current-meter-reading]');
+      readingField.value = '';
+      const meterId = meterSelect.value;
+      if (!meterId) return;
+      try {
+        const response = await fetch(`${apiBaseUrl}/smart-home/current-readings`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Không thể đọc chỉ số hiện tại');
+        const reading = payload.readings.find((item) => item.meterId === meterId);
+        if (reading) readingField.value = reading.current;
+      } catch {}
+    };
+    meterSelect.addEventListener('change', updateCurrentMeterReading);
+    updateCurrentMeterReading();
     formElement.addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
@@ -777,7 +869,18 @@ function openApartmentForm(apartmentIndex = -1) {
         const image = media.find((item) => item.kind === 'image')?.url || apartment?.image || '';
         const currentReadingValue = formElement.querySelector('[data-current-meter-reading]').value;
         const propertyType = form.get('propertyType');
-        const nextApartment = { ...apartment, name: form.get('name').trim(), title: form.get('title').trim(), description: form.get('description').trim(), floor: Number(form.get('floor') || 0), meterId: form.get('meterId').trim(), electricityBaseline: Number(form.get('electricityBaseline') || 0), electricityBaselineAt: apartment?.electricityBaselineAt || new Date().toISOString(), latestElectricityReading: currentReadingValue === '' ? apartment?.latestElectricityReading : Number(currentReadingValue), latestElectricityReadingAt: currentReadingValue === '' ? apartment?.latestElectricityReadingAt : new Date().toISOString(), rentAmount: parseMoney(form.get('rentAmount')), electricityRate: parseMoney(form.get('electricityRate')), waterBillingMode: form.get('waterBillingMode'), waterRate: parseMoney(form.get('waterRate')), waterFixedAmount: parseMoney(form.get('waterFixedAmount')), serviceFeeLabel: form.get('serviceFeeLabel').trim(), serviceFee: parseMoney(form.get('serviceFee')), image, media, propertyType, beds: bedDisplayPropertyTypes.has(propertyType) ? Number(form.get('beds') || 0) : 0, status: form.get('status') };
+        const waterBillingMode = building.settings?.waterBillingMode === 'floor-metered' ? (apartment?.waterBillingMode === 'fixed' ? 'fixed' : 'metered') : form.get('waterBillingMode');
+        const nextApartment = { ...apartment, name: form.get('name').trim(), title: form.get('title').trim(), description: form.get('description').trim(), floor: form.get('floor'), meterId: form.get('meterId').trim(), electricityBaseline: Number(form.get('electricityBaseline') || 0), electricityBaselineAt: apartment?.electricityBaselineAt || new Date().toISOString(), latestElectricityReading: currentReadingValue === '' ? apartment?.latestElectricityReading : Number(currentReadingValue), latestElectricityReadingAt: currentReadingValue === '' ? apartment?.latestElectricityReadingAt : new Date().toISOString(), rentAmount: parseMoney(form.get('rentAmount')), electricityBillingMode: form.get('electricityBillingMode'), electricityFixedAmount: parseMoney(form.get('electricityFixedAmount')), electricityRate: parseMoney(form.get('electricityRate')), waterBillingMode, waterRate: parseMoney(form.get('waterRate')), waterFixedAmount: parseMoney(form.get('waterFixedAmount')), electricityOccupantBilling: propertyType === 'shared-room' ? form.get('electricityOccupantBilling') : 'equal-occupants', electricityPerPersonAmount: propertyType === 'shared-room' ? parseMoney(form.get('electricityPerPersonAmount')) : 0, waterOccupantBilling: propertyType === 'shared-room' ? form.get('waterOccupantBilling') : 'equal-occupants', waterPerPersonAmount: propertyType === 'shared-room' ? parseMoney(form.get('waterPerPersonAmount')) : 0, serviceFeeLabel: form.get('serviceFeeLabel').trim(), serviceFee: parseMoney(form.get('serviceFee')), image, media, propertyType, beds: bedDisplayPropertyTypes.has(propertyType) ? Number(form.get('beds') || 0) : 0, status: form.get('status') };
+        if (apartment && apartment.name !== nextApartment.name) {
+          (building.services || []).forEach((service) => {
+            if (service.scopeType === 'apartment' && Array.isArray(service.scopeTargets)) service.scopeTargets = service.scopeTargets.map((target) => target === apartment.name ? nextApartment.name : target);
+          });
+          meterLogs.forEach((log) => {
+            if (Array.isArray(log.allocatedApartments)) log.allocatedApartments = log.allocatedApartments.map((name) => name === apartment.name ? nextApartment.name : name);
+            if (Array.isArray(log.allocations)) log.allocations.forEach((allocation) => { if (allocation.apartment === apartment.name) allocation.apartment = nextApartment.name; });
+          });
+          persistCollection(meterLogStorageKey, meterLogs);
+        }
         if (apartmentIndex >= 0) buildings[selectedBuildingIndex].apartments[apartmentIndex] = nextApartment;
         else buildings[selectedBuildingIndex].apartments.push(nextApartment);
         persistBuildings();
@@ -977,7 +1080,7 @@ function openLeadForm() {
   const apartmentOptions = (buildings[selectedBuildingIndex]?.apartments || []).map((apartment) => `<option value="${escapeHtml(apartment.name)}">${escapeHtml(apartment.name)}</option>`).join('');
   openModal('Thêm khách hẹn', `<form class="building-form" data-lead-form>
     <label>Họ và tên<input name="name" required maxlength="80" placeholder="Nhập họ tên khách hàng"></label>
-    <label>Số điện thoại<input name="phone" required pattern="[0-9 +()-]{8,}" placeholder="09xx xxx xxx"></label>
+    <label>Số điện thoại<input name="phone" required pattern="[0-9 +\\(\\)\\-]{8,}" placeholder="09xx xxx xxx"></label>
     <label>Căn hộ quan tâm<select name="apartment"><option value="">Chưa xác định</option>${apartmentOptions}</select></label>
     <label>Trạng thái<select name="status"><option value="new">Khách hẹn mới</option><option value="contacted">Đã liên hệ</option><option value="success">Đã ký hợp đồng</option><option value="cancelled">Đã hủy</option></select></label>
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu khách hẹn</button></div>
@@ -1033,30 +1136,108 @@ function apartmentReference(value) {
   return { building, apartment: apartment || building };
 }
 
+function customerRentalType(customer) {
+  return customer?.rentalType || (customer?.sourceBookingId ? 'homestay-short-term' : 'room-long-term');
+}
+
+function customerCoversApartment(customer, building, apartment) {
+  if (!customer || customer.status !== 'renting' || (customer.building && customer.building !== building.name)) return false;
+  const rentalType = customerRentalType(customer);
+  if (rentalType === 'whole-building-long-term') return true;
+  if (rentalType === 'floor-long-term') return String(customer.floor ?? '') === String(apartment.floor ?? '');
+  return ['room-long-term', 'bed-long-term'].includes(rentalType) && customer.apartment === apartment.name;
+}
+
+function customerRentalApartments(customer) {
+  const building = buildings.find((item) => item.name === customer?.building);
+  return building ? (building.apartments || []).filter((apartment) => customerCoversApartment({ ...customer, status: 'renting' }, building, apartment)) : [];
+}
+
+function rentalsOverlap(candidate, ignoredCustomer) {
+  if (candidate.status !== 'renting') return null;
+  const candidateApartments = customerRentalApartments(candidate);
+  return customers.find((customer) => customer !== ignoredCustomer && customer.status === 'renting' && customer.building === candidate.building && customerRentalApartments(customer).some((apartment) => candidateApartments.includes(apartment)) && !(
+    customerRentalType(candidate) === 'bed-long-term'
+    && customerRentalType(customer) === 'bed-long-term'
+    && candidate.apartment === customer.apartment
+    && String(candidate.bedNumber) !== String(customer.bedNumber)
+  ));
+}
+
 function synchronizeRentedApartments() {
   let changed = false;
-  customers.filter((customer) => customer.status === 'renting' && customer.apartment).forEach((customer) => {
-    const apartment = buildings.find((building) => !customer.building || building.name === customer.building)?.apartments?.find((item) => item.name === customer.apartment)
-      || buildings.flatMap((building) => building.apartments || []).find((item) => item.name === customer.apartment);
-    if (apartment && apartment.status !== 'rented') { apartment.status = 'rented'; changed = true; }
-  });
+  buildings.forEach((building) => (building.apartments || []).forEach((apartment) => {
+    const renters = customers.filter((customer) => customerCoversApartment(customer, building, apartment));
+    const bedRenters = renters.filter((customer) => customerRentalType(customer) === 'bed-long-term');
+    const rented = renters.some((customer) => customerRentalType(customer) !== 'bed-long-term') || (apartment.propertyType === 'shared-room' && bedRenters.length >= Number(apartment.beds || 0));
+    if (rented && apartment.status !== 'rented') { apartment.status = 'rented'; changed = true; }
+    else if (!rented && apartment.status === 'rented' && apartment.propertyType !== 'homestay') { apartment.status = 'empty'; changed = true; }
+  }));
   if (changed) persistBuildings(false);
 }
 
 function openCustomerForm(customerIndex = -1) {
   const customer = customerIndex >= 0 ? customers[customerIndex] : null;
-  const apartmentOptions = buildings.flatMap((building) => (building.apartments || []).map((apartment) => `<option value="${escapeHtml(`${building.name} | ${apartment.name}`)}">${escapeHtml(building.name)} · ${escapeHtml(apartment.name)}</option>`)).join('');
-  openModal(customer ? 'Cập nhật khách hàng' : 'Thêm khách hàng', `<form class="building-form" data-customer-form><div class="form-grid"><label><span class="field-label">Họ và tên <b>*</b></span><input name="name" required maxlength="80" value="${escapeHtml(customer?.name || '')}" placeholder="Nhập họ tên"></label><label>Email tài khoản<input name="email" type="email" maxlength="120" value="${escapeHtml(customer?.email || '')}" placeholder="Email đăng nhập người thuê"></label><label>Mã khách hàng<input name="code" maxlength="30" value="${escapeHtml(customer?.code || '')}" placeholder="Tự động nếu bỏ trống"></label><label><span class="field-label">Số điện thoại <b>*</b></span><input name="phone" required pattern="[0-9 +()-]{8,}" value="${escapeHtml(customer?.phone || '')}" placeholder="09xx xxx xxx"></label><label>Số CCCD/Hộ chiếu<input name="identity" maxlength="30" value="${escapeHtml(customer?.identity || '')}" placeholder="Có thể để trống"></label><label>Ảnh/PDF CCCD hoặc hộ chiếu<input name="identityFile" type="file" accept="image/*,.pdf"><small class="form-hint">Không bắt buộc. Tệp tối đa 700 KB${customer?.documentName ? `; hiện có: ${escapeHtml(customer.documentName)}` : ''}.</small></label><label>Ngày sinh<input name="birthDate" type="date" value="${escapeHtml(customer?.birthDate || '')}"></label><label>Loại khách<select name="type"><option value="personal" ${customer?.type === 'personal' ? 'selected' : ''}>Cá nhân</option><option value="business" ${customer?.type === 'business' ? 'selected' : ''}>Doanh nghiệp</option><option value="foreign" ${customer?.type === 'foreign' ? 'selected' : ''}>Khách nước ngoài</option></select></label><label>Căn hộ đang ở<select name="apartment"><option value="">Chưa xác định</option>${apartmentOptions}</select></label><label>Trạng thái<select name="status"><option value="renting" ${customer?.status === 'renting' ? 'selected' : ''}>Đang thuê</option><option value="moved" ${customer?.status === 'moved' ? 'selected' : ''}>Đã chuyển đi</option><option value="visitor" ${customer?.status === 'visitor' ? 'selected' : ''}>Khách vãng lai</option></select></label><label class="full-field">Địa chỉ<textarea name="address" placeholder="Địa chỉ liên hệ">${escapeHtml(customer?.address || '')}</textarea></label></div><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">${customer ? 'Cập nhật khách hàng' : 'Lưu khách hàng'}</button></div></form>`, () => {
+  const rentalType = customerRentalType(customer);
+  const buildingOptions = buildings.map((building) => `<option value="${escapeHtml(building.name)}" ${customer?.building === building.name ? 'selected' : ''}>${escapeHtml(building.name)}</option>`).join('');
+  openModal(customer ? 'Cập nhật khách hàng' : 'Thêm khách hàng', `<form class="building-form" data-customer-form><div class="form-grid"><label><span class="field-label">Họ và tên <b>*</b></span><input name="name" required maxlength="80" value="${escapeHtml(customer?.name || '')}" placeholder="Nhập họ tên"></label><label>Email tài khoản<input name="email" type="email" maxlength="120" value="${escapeHtml(customer?.email || '')}" placeholder="Email đăng nhập người thuê"></label><label>Mã khách hàng<input name="code" maxlength="30" value="${escapeHtml(customer?.code || '')}" placeholder="Tự động nếu bỏ trống"></label><label><span class="field-label">Số điện thoại <b>*</b></span><input name="phone" required pattern="[0-9 +\\(\\)\\-]{8,}" value="${escapeHtml(customer?.phone || '')}" placeholder="09xx xxx xxx"></label><label>Số CCCD/Hộ chiếu<input name="identity" maxlength="30" value="${escapeHtml(customer?.identity || '')}" placeholder="Có thể để trống"></label><label>Ảnh/PDF CCCD hoặc hộ chiếu<input name="identityFile" type="file" accept="image/*,.pdf"><small class="form-hint">Không bắt buộc. Tệp tối đa 700 KB${customer?.documentName ? `; hiện có: ${escapeHtml(customer.documentName)}` : ''}.</small></label><label>Ngày sinh<input name="birthDate" type="date" value="${escapeHtml(customer?.birthDate || '')}"></label><label>Loại khách<select name="type"><option value="personal" ${customer?.type === 'personal' ? 'selected' : ''}>Cá nhân</option><option value="business" ${customer?.type === 'business' ? 'selected' : ''}>Doanh nghiệp</option><option value="foreign" ${customer?.type === 'foreign' ? 'selected' : ''}>Khách nước ngoài</option></select></label><label>Hình thức thuê<select name="rentalType" ${rentalType === 'homestay-short-term' ? 'disabled' : ''}><option value="whole-building-long-term" ${rentalType === 'whole-building-long-term' ? 'selected' : ''}>Thuê nguyên căn · dài hạn</option><option value="floor-long-term" ${rentalType === 'floor-long-term' ? 'selected' : ''}>Thuê một tầng · dài hạn</option><option value="room-long-term" ${rentalType === 'room-long-term' ? 'selected' : ''}>Thuê một phòng trong tầng · dài hạn</option><option value="bed-long-term" ${rentalType === 'bed-long-term' ? 'selected' : ''}>Thuê một giường · dài hạn</option>${rentalType === 'homestay-short-term' ? '<option value="homestay-short-term" selected>Homestay một phòng · ngắn hạn</option>' : ''}</select></label><label data-customer-building>Tòa nhà<select name="building" required><option value="">Chọn tòa nhà</option>${buildingOptions}</select></label><label data-customer-floor>Tầng<select name="floor"><option value="">Chọn tầng</option></select></label><label data-customer-apartment>Phòng<select name="apartment"><option value="">Chọn phòng</option></select></label><label data-customer-bed>Giường<select name="bedNumber"><option value="">Chọn giường</option></select></label><label>Trạng thái<select name="status"><option value="renting" ${customer?.status === 'renting' ? 'selected' : ''}>Đang thuê</option><option value="moved" ${customer?.status === 'moved' ? 'selected' : ''}>Đã chuyển đi</option><option value="visitor" ${customer?.status === 'visitor' ? 'selected' : ''}>Khách lưu trú ngắn hạn</option></select></label><label class="full-field">Địa chỉ<textarea name="address" placeholder="Địa chỉ liên hệ">${escapeHtml(customer?.address || '')}</textarea></label></div><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy bỏ</button><button class="primary-button" type="submit">${customer ? 'Cập nhật khách hàng' : 'Lưu khách hàng'}</button></div></form>`, () => {
     document.querySelector('[data-modal]').classList.add('customer-form-modal');
     modalCloseAction = openCustomerManager;
     const apartmentSelect = document.querySelector('[data-customer-form] [name="apartment"]');
-    apartmentSelect.value = customer?.apartment ? `${customer.building || buildings.find((building) => (building.apartments || []).some((apartment) => apartment.name === customer.apartment))?.name || ''} | ${customer.apartment}` : '';
-    document.querySelector('[data-customer-form] [name="status"]').closest('label').insertAdjacentHTML('afterend', '<label>Chỉ số điện bàn giao (kWh)<input name="initialElectricityReading" type="number" min="0" step="0.01" value="0"><small class="form-hint" data-electricity-handover-status>Chọn căn để lấy chỉ số Tuya hiện tại.</small></label><label>Chỉ số nước bàn giao (m³)<input name="initialWaterReading" type="number" min="0" step="0.01" value="0"><small class="form-hint">Nhập số đang hiển thị trên đồng hồ nước.</small></label>');
+    document.querySelector('[data-customer-form] [name="status"]').closest('label').insertAdjacentHTML('afterend', `<label data-customer-rent>Tiền thuê hợp đồng mỗi tháng<input name="rentAmount" type="number" min="0" value="${Number(customer?.rentAmount || 0)}"><small class="form-hint">Thuê phòng có thể để 0 để dùng giá đang cấu hình tại phòng.</small></label><label data-contract-utility>Cách tính điện hợp đồng<select name="electricityContractBilling"><option value="scope" ${customer?.electricityContractBilling !== 'fixed' ? 'selected' : ''}>Theo cấu hình và công tơ của phạm vi thuê</option><option value="fixed" ${customer?.electricityContractBilling === 'fixed' ? 'selected' : ''}>Cố định cho toàn hợp đồng</option></select></label><label data-contract-utility data-contract-electricity-fixed>Tiền điện cố định hợp đồng<input name="electricityFixedAmount" type="number" min="0" value="${Number(customer?.electricityFixedAmount || 0)}"></label><label data-contract-utility>Cách tính nước hợp đồng<select name="waterContractBilling"><option value="scope" ${customer?.waterContractBilling !== 'fixed' ? 'selected' : ''}>Theo cấu hình và đồng hồ của phạm vi thuê</option><option value="fixed" ${customer?.waterContractBilling === 'fixed' ? 'selected' : ''}>Cố định cho toàn hợp đồng</option></select></label><label data-contract-utility data-contract-water-fixed>Tiền nước cố định hợp đồng<input name="waterFixedAmount" type="number" min="0" value="${Number(customer?.waterFixedAmount || 0)}"></label><label>Chỉ số điện bàn giao (kWh)<input name="initialElectricityReading" type="number" min="0" step="0.01" value="0"><small class="form-hint" data-electricity-handover-status>Chọn căn để lấy chỉ số Tuya hiện tại.</small></label><label>Chỉ số nước bàn giao (m³)<input name="initialWaterReading" type="number" min="0" step="0.01" value="0"><small class="form-hint">Nhập số đang hiển thị trên đồng hồ nước.</small></label>`);
     const customerForm = document.querySelector('[data-customer-form]');
+    const rentalTypeField = customerForm.elements.rentalType;
+    const buildingField = customerForm.elements.building;
+    const floorField = customerForm.elements.floor;
+    const bedField = customerForm.elements.bedNumber;
+    const updateRentalTargets = (preserveValues = false) => {
+      const type = rentalTypeField.value || rentalType;
+      const building = buildings.find((item) => item.name === buildingField.value);
+      const selectedFloor = preserveValues ? String(customer?.floor ?? '') : floorField.value;
+      const selectedApartment = preserveValues ? customer?.apartment || '' : apartmentSelect.value;
+      const floors = getBuildingFloors(building);
+      floorField.innerHTML = `<option value="">Chọn tầng</option>${floors.map((floor) => `<option value="${escapeHtml(floor)}" ${String(floor) === selectedFloor ? 'selected' : ''}>Tầng ${escapeHtml(floor)}</option>`).join('')}`;
+      const rooms = (building?.apartments || []).filter((apartment) => (!floorField.value || String(apartment.floor ?? '') === floorField.value) && (type === 'bed-long-term' ? apartment.propertyType === 'shared-room' : type === 'homestay-short-term' ? apartment.propertyType === 'homestay' : apartment.propertyType !== 'homestay'));
+      apartmentSelect.innerHTML = `<option value="">Chọn phòng</option>${rooms.map((apartment) => `<option value="${escapeHtml(apartment.name)}" ${apartment.name === selectedApartment ? 'selected' : ''}>${escapeHtml(apartment.name)}${apartment.floor ? ` · tầng ${escapeHtml(apartment.floor)}` : ''}</option>`).join('')}`;
+      const room = rooms.find((apartment) => apartment.name === apartmentSelect.value);
+      bedField.innerHTML = `<option value="">Chọn giường</option>${Array.from({ length: Number(room?.beds || 0) }, (_, index) => `<option value="${index + 1}" ${String(customer?.bedNumber || '') === String(index + 1) ? 'selected' : ''}>Giường ${index + 1}</option>`).join('')}`;
+      const shortStay = type === 'homestay-short-term';
+      const bedRental = type === 'bed-long-term';
+      customerForm.querySelector('[data-customer-rent]').hidden = shortStay;
+      customerForm.querySelectorAll('[data-contract-utility]').forEach((field) => { field.hidden = shortStay || bedRental; });
+      customerForm.querySelector('[data-contract-electricity-fixed]').hidden = shortStay || bedRental || customerForm.elements.electricityContractBilling.value !== 'fixed';
+      customerForm.querySelector('[data-contract-water-fixed]').hidden = shortStay || bedRental || customerForm.elements.waterContractBilling.value !== 'fixed';
+      customerForm.elements.rentAmount.required = ['whole-building-long-term', 'floor-long-term', 'bed-long-term'].includes(type);
+      customerForm.elements.rentAmount.min = customerForm.elements.rentAmount.required ? '1' : '0';
+      customerForm.querySelector('[data-customer-floor]').hidden = !['floor-long-term', 'room-long-term', 'bed-long-term'].includes(type);
+      customerForm.querySelector('[data-customer-apartment]').hidden = !['room-long-term', 'bed-long-term', 'homestay-short-term'].includes(type);
+      customerForm.querySelector('[data-customer-bed]').hidden = type !== 'bed-long-term';
+      floorField.required = type === 'floor-long-term';
+      apartmentSelect.required = ['room-long-term', 'bed-long-term', 'homestay-short-term'].includes(type);
+      bedField.required = type === 'bed-long-term';
+      [rentalTypeField, buildingField, floorField, apartmentSelect, bedField, customerForm.elements.status].forEach((field) => { if (shortStay) field.disabled = true; });
+    };
+    buildingField.addEventListener('change', () => updateRentalTargets());
+    floorField.addEventListener('change', () => updateRentalTargets());
+    rentalTypeField.addEventListener('change', () => updateRentalTargets());
+    apartmentSelect.addEventListener('change', () => updateRentalTargets());
+    customerForm.elements.electricityContractBilling.addEventListener('change', () => updateRentalTargets());
+    customerForm.elements.waterContractBilling.addEventListener('change', () => updateRentalTargets());
+    updateRentalTargets(true);
+    addFormGuidance(customerForm, {
+      email: 'Dùng để liên kết tài khoản cư dân và nhận hóa đơn; có thể bổ sung sau.',
+      code: 'Bỏ trống để hệ thống tự tạo mã khách hàng.',
+      type: 'Dùng để phân loại hồ sơ; không thay đổi cách tính tiền.',
+      rentalType: rentalType === 'homestay-short-term' ? 'Khách ngắn hạn được quản lý bằng Booking; chỉ xem tại đây.' : 'Xác định phạm vi thuê và cách kiểm tra trùng chỗ.',
+      building: 'Tòa nhà chứa khu vực khách thuê.',
+      floor: 'Bắt buộc khi thuê nguyên tầng; dùng để lọc phòng khi thuê phòng hoặc giường.',
+      apartment: 'Chọn đúng phòng khi thuê phòng, giường hoặc homestay.',
+      bedNumber: 'Mỗi giường chỉ được gắn cho một khách dài hạn đang thuê.',
+      status: 'Đang thuê sẽ chuyển căn sang Đang thuê; chuyển đi sẽ giải phóng căn nếu không còn người thuê.'
+    });
     let currentReadings = new Map();
     const updateHandoverReadings = () => {
-      const reference = apartmentReference(apartmentSelect.value);
-      const selected = buildings.find((building) => building.name === reference.building)?.apartments?.find((apartment) => apartment.name === reference.apartment);
+      const selected = buildings.find((building) => building.name === buildingField.value)?.apartments?.find((apartment) => apartment.name === apartmentSelect.value);
       const liveReading = currentReadings.get(selected?.meterId);
       customerForm.elements.initialElectricityReading.value = liveReading?.current ?? selected?.electricityBaseline ?? selected?.latestElectricityReading ?? 0;
       customerForm.elements.initialWaterReading.value = selected?.waterBaseline ?? selected?.latestWaterReading ?? 0;
@@ -1074,7 +1255,6 @@ function openCustomerForm(customerIndex = -1) {
     document.querySelector('[data-customer-form]').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
-      const selectedApartment = apartmentReference(form.get('apartment'));
       const previousApartment = customer ? { building: customer.building || '', apartment: customer.apartment || '', status: customer.status } : null;
       const identityFile = form.get('identityFile');
       const submitButton = event.currentTarget.querySelector('[type="submit"]');
@@ -1087,7 +1267,15 @@ function openCustomerForm(customerIndex = -1) {
         showToast(error.message);
         return;
       }
-      const nextCustomer = { id: customer?.id || crypto.randomUUID(), ...customer, ...document, name: form.get('name').trim(), email: form.get('email').trim().toLowerCase(), code: form.get('code').trim() || customer?.code || `KH${String(customers.length + 1).padStart(6, '0')}`, phone: form.get('phone').trim(), identity: form.get('identity').trim(), birthDate: form.get('birthDate'), type: form.get('type'), building: selectedApartment.building, apartment: selectedApartment.apartment, status: form.get('status'), address: form.get('address').trim(), createdAt: customer?.createdAt || new Date().toISOString() };
+      const nextRentalType = rentalType === 'homestay-short-term' ? rentalType : form.get('rentalType');
+      const nextCustomer = { id: customer?.id || crypto.randomUUID(), ...customer, ...document, name: form.get('name').trim(), email: form.get('email').trim().toLowerCase(), code: form.get('code').trim() || customer?.code || `KH${String(customers.length + 1).padStart(6, '0')}`, phone: form.get('phone').trim(), identity: form.get('identity').trim(), birthDate: form.get('birthDate'), type: form.get('type'), rentalType: nextRentalType, building: rentalType === 'homestay-short-term' ? customer.building : form.get('building'), floor: nextRentalType === 'whole-building-long-term' ? '' : rentalType === 'homestay-short-term' ? customer.floor || '' : form.get('floor'), apartment: ['room-long-term', 'bed-long-term'].includes(nextRentalType) ? form.get('apartment') : rentalType === 'homestay-short-term' ? customer.apartment : '', bedNumber: nextRentalType === 'bed-long-term' ? Number(form.get('bedNumber')) : null, status: rentalType === 'homestay-short-term' ? 'visitor' : form.get('status'), address: form.get('address').trim(), createdAt: customer?.createdAt || new Date().toISOString() };
+      nextCustomer.rentAmount = nextRentalType === 'homestay-short-term' ? Number(customer?.rentAmount || 0) : parseMoney(form.get('rentAmount'));
+      nextCustomer.electricityContractBilling = nextRentalType === 'bed-long-term' ? 'scope' : form.get('electricityContractBilling');
+      nextCustomer.electricityFixedAmount = nextCustomer.electricityContractBilling === 'fixed' ? parseMoney(form.get('electricityFixedAmount')) : 0;
+      nextCustomer.waterContractBilling = nextRentalType === 'bed-long-term' ? 'scope' : form.get('waterContractBilling');
+      nextCustomer.waterFixedAmount = nextCustomer.waterContractBilling === 'fixed' ? parseMoney(form.get('waterFixedAmount')) : 0;
+      const conflict = rentalsOverlap(nextCustomer, customer);
+      if (conflict) { submitButton.disabled = false; showToast(`Phạm vi thuê đang trùng với khách ${conflict.name}`); return; }
       const startingTenancy = nextCustomer.status === 'renting' && nextCustomer.apartment && (!previousApartment || previousApartment.status !== 'renting' || previousApartment.building !== nextCustomer.building || previousApartment.apartment !== nextCustomer.apartment);
       const targetApartment = buildings.find((building) => building.name === nextCustomer.building)?.apartments?.find((item) => item.name === nextCustomer.apartment);
       const handoverReadings = { electricity: Number(form.get('initialElectricityReading') || 0), water: Number(form.get('initialWaterReading') || 0) };
@@ -1097,9 +1285,8 @@ function openCustomerForm(customerIndex = -1) {
       }
       if (customerIndex >= 0) customers[customerIndex] = nextCustomer;
       else customers.push(nextCustomer);
-      const changedApartment = previousApartment && (previousApartment.building !== nextCustomer.building || previousApartment.apartment !== nextCustomer.apartment);
-      if (previousApartment?.apartment && previousApartment.status === 'renting' && (changedApartment || nextCustomer.status !== 'renting') && !customers.some((item) => item !== nextCustomer && item.status === 'renting' && item.apartment === previousApartment.apartment && (!previousApartment.building || item.building === previousApartment.building))) setApartmentStatus(previousApartment.apartment, 'empty', previousApartment.building);
-      if (nextCustomer.status === 'renting' && nextCustomer.apartment) setApartmentStatus(nextCustomer.apartment, 'rented', nextCustomer.building, handoverReadings);
+      if (startingTenancy && targetApartment) setApartmentStatus(nextCustomer.apartment, 'rented', nextCustomer.building, handoverReadings);
+      synchronizeRentedApartments();
       persistCustomers();
       closeModal();
       showToast(customer ? 'Đã cập nhật khách hàng' : 'Đã thêm khách hàng');
@@ -1110,13 +1297,15 @@ function openCustomerForm(customerIndex = -1) {
 function openCustomerDetails(customerIndex) {
   const customer = customers[customerIndex];
   if (!customer) return;
-  const statusLabels = { renting: 'Đang thuê', moved: 'Đã chuyển đi', visitor: 'Khách vãng lai' };
+  const statusLabels = { renting: 'Thuê dài hạn', moved: 'Đã chuyển đi', visitor: 'Lưu trú ngắn hạn' };
   const typeLabels = { personal: 'Cá nhân', business: 'Doanh nghiệp', foreign: 'Khách nước ngoài' };
   const building = buildings.find((item) => item.name === customer.building) || buildings.find((item) => (item.apartments || []).some((apartment) => apartment.name === customer.apartment));
-  const relatedInvoices = invoices.filter((invoice) => invoice.approvalStatus !== 'pending' && invoice.status !== 'paid' && (invoice.tenantEmail === customer.email || (invoice.apartment === customer.apartment && invoice.building === building?.name)));
+  const coveredApartments = new Set(customerRentalApartments(customer).map((apartment) => apartment.name));
+  const relatedInvoices = invoices.filter((invoice) => invoice.approvalStatus !== 'pending' && invoice.status !== 'paid' && ((customer.id && invoice.customerId === customer.id) || (customer.email && invoice.tenantEmail === customer.email) || (invoice.building === building?.name && coveredApartments.has(invoice.apartment))));
   const outstanding = relatedInvoices.reduce((total, invoice) => total + Number(invoice.amount || 0), 0);
   const invoicesHtml = relatedInvoices.length ? relatedInvoices.map((invoice) => `<li>${escapeHtml(invoice.title)} · ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ${invoice.dueDate ? ` · hạn ${escapeHtml(invoice.dueDate)}` : ''}</li>`).join('') : '<li>Không có hóa đơn chưa thanh toán.</li>';
-  openModal(`Hồ sơ khách hàng · ${customer.name}`, `<div class="entity-summary customer-detail-summary"><strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.code || 'Chưa có mã')} · ${escapeHtml(statusLabels[customer.status] || 'Chưa xác định')}</span></div><div class="customer-detail-grid"><div><small>Số điện thoại</small><strong>${escapeHtml(customer.phone || 'Chưa cập nhật')}</strong></div><div><small>Email</small><strong>${escapeHtml(customer.email || 'Chưa cập nhật')}</strong></div><div><small>Loại khách</small><strong>${escapeHtml(typeLabels[customer.type] || 'Cá nhân')}</strong></div><div><small>Số CCCD/Hộ chiếu</small><strong>${escapeHtml(customer.identity || 'Không cung cấp')}</strong></div><div><small>Tệp CCCD/Hộ chiếu</small><strong>${customer.documentUrl ? `<a href="${escapeHtml(customer.documentUrl)}" target="_blank" rel="noopener">${escapeHtml(customer.documentName || 'Xem giấy tờ')}</a>` : 'Không cung cấp'}</strong></div><div><small>Tòa nhà</small><strong>${escapeHtml(building?.name || customer.building || 'Chưa xác định')}</strong></div><div><small>Căn hộ/Văn phòng</small><strong>${escapeHtml(customer.apartment || 'Chưa xác định')}</strong></div><div class="full"><small>Địa chỉ liên hệ</small><strong>${escapeHtml(customer.address || 'Chưa cập nhật')}</strong></div></div><div class="entity-summary customer-detail-balance"><span>Hóa đơn chưa thanh toán</span><strong>${outstanding.toLocaleString('vi-VN')} đ</strong></div><section class="customer-detail-section"><h3>Hóa đơn chưa thanh toán</h3><ul>${invoicesHtml}</ul></section><div class="form-actions"><button class="modal-secondary" type="button" data-customer-detail-close>Quay lại danh sách</button><button class="primary-button" type="button" data-customer-detail-edit>Sửa hồ sơ</button></div>`, () => {
+  const rentalTarget = [customer.building, customer.floor ? `Tầng ${customer.floor}` : '', customer.apartment, customer.bedNumber ? `Giường ${customer.bedNumber}` : ''].filter(Boolean).join(' · ');
+  openModal(`Hồ sơ khách hàng · ${customer.name}`, `<div class="entity-summary customer-detail-summary"><strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.code || 'Chưa có mã')} · ${escapeHtml(statusLabels[customer.status] || 'Chưa xác định')}</span></div><div class="customer-detail-grid"><div><small>Số điện thoại</small><strong>${escapeHtml(customer.phone || 'Chưa cập nhật')}</strong></div><div><small>Email</small><strong>${escapeHtml(customer.email || 'Chưa cập nhật')}</strong></div><div><small>Loại khách</small><strong>${escapeHtml(typeLabels[customer.type] || 'Cá nhân')}</strong></div><div><small>Hình thức thuê</small><strong>${escapeHtml(rentalTypeLabels[customerRentalType(customer)])}</strong></div><div><small>Số CCCD/Hộ chiếu</small><strong>${escapeHtml(customer.identity || 'Không cung cấp')}</strong></div><div><small>Tệp CCCD/Hộ chiếu</small><strong>${customer.documentUrl ? `<a href="${escapeHtml(customer.documentUrl)}" target="_blank" rel="noopener">${escapeHtml(customer.documentName || 'Xem giấy tờ')}</a>` : 'Không cung cấp'}</strong></div><div class="full"><small>Phạm vi thuê</small><strong>${escapeHtml(rentalTarget || 'Chưa xác định')}</strong></div><div class="full"><small>Địa chỉ liên hệ</small><strong>${escapeHtml(customer.address || 'Chưa cập nhật')}</strong></div></div><div class="entity-summary customer-detail-balance"><span>Hóa đơn chưa thanh toán</span><strong>${outstanding.toLocaleString('vi-VN')} đ</strong></div><section class="customer-detail-section"><h3>Hóa đơn chưa thanh toán</h3><ul>${invoicesHtml}</ul></section><div class="form-actions"><button class="modal-secondary" type="button" data-customer-detail-close>Quay lại danh sách</button><button class="primary-button" type="button" data-customer-detail-edit>Sửa hồ sơ</button></div>`, () => {
     modalCloseAction = openCustomerManager;
     document.querySelector('[data-customer-detail-close]').addEventListener('click', closeModal);
     document.querySelector('[data-customer-detail-edit]').addEventListener('click', () => openCustomerForm(customerIndex));
@@ -1126,13 +1315,16 @@ function openCustomerDetails(customerIndex) {
 function openCustomerManager() {
   const renderRows = (query = '', status = 'renting') => {
     const filtered = customers.filter((customer) => customer.status === status && `${customer.name} ${customer.code} ${customer.identity} ${customer.apartment}`.toLowerCase().includes(query.toLowerCase()));
-    return filtered.length ? filtered.map((customer) => `<tr><td><input type="checkbox"></td><td><strong class="building-code">${escapeHtml(customer.code)}</strong></td><td><div class="table-actions customer-table-actions"><button type="button" data-customer-view="${customers.indexOf(customer)}" aria-label="Xem thông tin khách">Xem</button><button type="button" data-customer-edit="${customers.indexOf(customer)}" aria-label="Sửa thông tin khách">Sửa</button><button type="button" class="danger-action" data-customer-delete="${customers.indexOf(customer)}" aria-label="Xóa khách" ${customer.status === 'renting' ? 'disabled title="Khách đang thuê không thể xóa"' : ''}>Xóa</button></div></td><td><button type="button" class="customer-name-link" data-customer-view="${customers.indexOf(customer)}">${escapeHtml(customer.name)}</button><small class="table-muted">${escapeHtml(customer.type === 'business' ? 'Doanh nghiệp' : customer.type === 'foreign' ? 'Khách nước ngoài' : 'Cá nhân')}</small></td><td>${escapeHtml(customer.apartment || 'Chưa xác định')}</td><td>${escapeHtml(customer.identity || 'Không cung cấp')}</td><td>${escapeHtml(customer.birthDate || 'Chưa cập nhật')}</td><td>${escapeHtml(customer.address || 'Chưa cập nhật')}</td></tr>`).join('') : '<tr><td colspan="8" class="table-empty">Không có dữ liệu nào để hiển thị</td></tr>';
+    return filtered.length ? filtered.map((customer) => { const target = [customer.building, customer.floor ? `Tầng ${customer.floor}` : '', customer.apartment, customer.bedNumber ? `Giường ${customer.bedNumber}` : ''].filter(Boolean).join(' · '); return `<tr><td><input type="checkbox"></td><td><strong class="building-code">${escapeHtml(customer.code)}</strong></td><td><div class="table-actions customer-table-actions"><button type="button" data-customer-view="${customers.indexOf(customer)}" aria-label="Xem thông tin khách">Xem</button><button type="button" data-customer-edit="${customers.indexOf(customer)}" aria-label="Sửa thông tin khách">Sửa</button><button type="button" class="danger-action" data-customer-delete="${customers.indexOf(customer)}" aria-label="Xóa khách" ${customer.status === 'renting' ? 'disabled title="Khách đang thuê không thể xóa"' : ''}>Xóa</button></div></td><td><button type="button" class="customer-name-link" data-customer-view="${customers.indexOf(customer)}">${escapeHtml(customer.name)}</button><small class="table-muted">${escapeHtml(rentalTypeLabels[customerRentalType(customer)])}</small></td><td>${escapeHtml(target || 'Chưa xác định')}</td><td>${escapeHtml(customer.identity || 'Không cung cấp')}</td><td>${escapeHtml(customer.birthDate || 'Chưa cập nhật')}</td><td>${escapeHtml(customer.address || 'Chưa cập nhật')}</td></tr>`; }).join('') : '<tr><td colspan="8" class="table-empty">Không có dữ liệu nào để hiển thị</td></tr>';
   };
   const count = (status) => customers.filter((customer) => customer.status === status).length;
   openModal('Khách hàng', `<div class="customer-manager" data-customer-manager><div class="customer-tabs"><button class="active" data-customer-tab="renting">♙　Đang thuê</button><button data-customer-tab="moved">♙　Đã chuyển đi</button><button data-customer-tab="visitor">♙　Khách vãng lai</button></div><div class="manager-stat-grid customer-stat-grid"><div class="manager-stat blue"><span>♧</span><strong>${customers.length}</strong><small>Tất cả</small></div><div class="manager-stat green"><span>♙</span><strong>${customers.filter((customer) => customer.type === 'personal').length}</strong><small>Cá nhân</small></div><div class="manager-stat orange"><span>▣</span><strong>${customers.filter((customer) => customer.type === 'business').length}</strong><small>Doanh nghiệp</small></div><div class="manager-stat red"><span>◎</span><strong>${customers.filter((customer) => customer.type === 'foreign').length}</strong><small>Khách nước ngoài</small></div></div><div class="customer-toolbar"><select><option>Chọn khu vực</option></select><select><option>Chọn tòa nhà</option>${buildings.map((building) => `<option>${escapeHtml(building.name)}</option>`).join('')}</select><select disabled><option>Chọn phòng</option></select><select disabled><option>Chọn giường</option></select></div><div class="manager-toolbar"><input type="search" placeholder="⌕  Tìm kiếm" data-customer-search><button class="primary-button" type="button" data-customer-add>＋</button></div><div class="table-scroll"><table class="building-table customer-table"><thead><tr><th><input type="checkbox"></th><th>Mã KH</th><th>Thao tác</th><th>Khách hàng ↕</th><th>Căn hộ đang ở</th><th>CMND/CCCD/Hộ chiếu ↕</th><th>Ngày sinh ↕</th><th>Địa chỉ ↕</th></tr></thead><tbody data-customer-rows>${renderRows()}</tbody></table></div><div class="manager-footer"><span>Số bản ghi</span><select><option>10</option><option>25</option></select><span data-customer-result>${count('renting') ? `1 - ${count('renting')} trên tổng số ${count('renting')} bản ghi` : '1 - 0 trên tổng số 0 bản ghi'}</span></div><div class="faq"><h3>Câu hỏi thường gặp</h3><details><summary>Khách hàng có ứng dụng cư dân không?</summary><p>Khách thuê có thể sử dụng ứng dụng cư dân để xem hóa đơn và thông báo.</p></details><details><summary>Khách hàng sử dụng app cư dân có mất phí không?</summary><p>Chính sách phí phụ thuộc cấu hình của chủ nhà và tòa nhà.</p></details></div></div>`, () => {
     modalTitle.textContent = 'Hồ sơ khách thuê';
     document.querySelector('[data-modal]').classList.add('modal-wide');
     const manager = document.querySelector('[data-customer-manager]');
+    manager.querySelector('[data-customer-tab="renting"]').textContent = '♙　Thuê dài hạn';
+    manager.querySelector('[data-customer-tab="visitor"]').textContent = '♙　Lưu trú ngắn hạn';
+    manager.querySelector('.customer-table th:nth-child(5)').textContent = 'Phạm vi thuê';
     let currentStatus = customerManagerStatus;
     const updateRows = () => { customerManagerStatus = currentStatus; manager.querySelectorAll('[data-customer-tab]').forEach((item) => item.classList.toggle('active', item.dataset.customerTab === currentStatus)); manager.querySelector('[data-customer-rows]').innerHTML = renderRows(manager.querySelector('[data-customer-search]').value, currentStatus); manager.querySelector('[data-customer-result]').textContent = `${customers.filter((customer) => customer.status === currentStatus).length} bản ghi`; bindActions(); };
     const bindActions = () => { manager.querySelectorAll('[data-customer-view]').forEach((button) => button.addEventListener('click', () => openCustomerDetails(Number(button.dataset.customerView)))); manager.querySelectorAll('[data-customer-edit]').forEach((button) => button.addEventListener('click', () => openCustomerForm(Number(button.dataset.customerEdit)))); manager.querySelectorAll('[data-customer-delete]').forEach((button) => button.addEventListener('click', () => { const index = Number(button.dataset.customerDelete); const customer = customers[index]; if (customer.status === 'renting') { showToast('Khách đang thuê không thể xóa. Hãy chuyển trạng thái khách trước.'); return; } const relatedInvoices = invoices.filter((invoice) => invoice.tenantEmail === customer.email || (invoice.building === customer.building && invoice.apartment === customer.apartment)).length; const hasAccount = users.some((user) => user.customerId === customer.id || (customer.email && user.email === customer.email)); const relatedDetails = `${relatedInvoices} hóa đơn${hasAccount ? ' và 1 tài khoản đăng nhập' : ''} sẽ không còn gắn với hồ sơ này`; if (!confirmPermanentDeletion(`khách hàng "${customer.name}"`, relatedDetails)) return; customers.splice(index, 1); persistCustomers(); openCustomerManager(); showToast('Đã xóa khách hàng'); })); };
@@ -1149,7 +1341,7 @@ function openWorkflowForm() {
   openModal('Thêm đặt cọc', `<form class="building-form" data-workflow-form>
     <label>Hồ sơ khách hàng<select name="customerId"><option value="">Nhập khách chưa có hồ sơ</option>${customerOptions}</select></label>
     <label>Khách hàng<input name="name" required maxlength="80" placeholder="Họ và tên"></label>
-    <label>Số điện thoại<input name="phone" required pattern="[0-9 +()-]{8,}" placeholder="09xx xxx xxx"></label>
+    <label>Số điện thoại<input name="phone" required pattern="[0-9 +\\(\\)\\-]{8,}" placeholder="09xx xxx xxx"></label>
     <label>Căn hộ<select name="apartment"><option value="">Chưa xác định</option>${apartmentOptions}</select></label>
     <label>Tiền đặt cọc<input name="amount" inputmode="numeric" value="0"></label>
     <label>Phương thức nhận cọc<select name="method"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label>
@@ -1157,6 +1349,12 @@ function openWorkflowForm() {
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
     const formElement = document.querySelector('[data-workflow-form]');
+    addFormGuidance(formElement, {
+      customerId: 'Chọn hồ sơ có sẵn để tự điền thông tin; để trống nếu là khách mới.',
+      apartment: 'Căn được chọn sẽ chuyển sang trạng thái Đang cọc.',
+      amount: 'Số tiền lớn hơn 0 sẽ được ghi nhận vào Sổ thu chi.',
+      method: 'Chọn đúng phương thức thực tế để đối soát dòng tiền.'
+    });
     setupMoneyInputs(formElement);
     formElement.elements.customerId.addEventListener('change', () => {
       const customer = customers.find((item) => item.id === formElement.elements.customerId.value);
@@ -1192,6 +1390,12 @@ function openDepositDispositionForm(reservationIndex) {
   const eligibleInvoices = invoices.filter((invoice) => invoice.approvalStatus === 'approved' && invoice.status !== 'paid' && (reservation.tenantEmail && invoice.tenantEmail === reservation.tenantEmail || invoice.building === reservation.building && invoice.apartment === reservation.apartment));
   openModal('Xử lý tiền cọc', `<form class="building-form" data-deposit-disposition-form><div class="entity-summary">${escapeHtml(reservation.name)} · <strong>${Number(reservation.amount || 0).toLocaleString('vi-VN')} đ</strong></div><label>Hình thức xử lý<select name="disposition"><option value="refunded">Hoàn lại khách</option><option value="applied" ${eligibleInvoices.length ? '' : 'disabled'}>Khấu trừ hóa đơn</option><option value="forfeited">Ghi nhận cọc giữ lại</option></select></label><label data-deposit-invoice hidden>Hóa đơn<select name="invoiceId">${eligibleInvoices.map((invoice) => `<option value="${escapeHtml(invoice.id)}">${escapeHtml(invoice.title)} · ${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ</option>`).join('')}</select></label><label data-deposit-method>Phương thức hoàn<select name="method"><option value="bank-transfer">Chuyển khoản</option><option value="cash">Tiền mặt</option><option value="other">Khác</option></select></label><label>Ghi chú<textarea name="note" maxlength="300"></textarea></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Xác nhận xử lý</button></div></form>`, () => {
     const formElement = document.querySelector('[data-deposit-disposition-form]');
+    addFormGuidance(formElement, {
+      disposition: 'Hoàn lại tạo khoản chi; khấu trừ giảm hóa đơn; giữ lại ghi nhận thành khoản thu.',
+      invoiceId: 'Tiền cọc được trừ vào hóa đơn đã duyệt này.',
+      method: 'Phương thức thực tế dùng để hoàn tiền cho khách.',
+      note: 'Nêu lý do xử lý để thuận tiện kiểm tra sau này.'
+    });
     const updateFields = () => {
       formElement.querySelector('[data-deposit-invoice]').hidden = formElement.elements.disposition.value !== 'applied';
       formElement.querySelector('[data-deposit-method]').hidden = formElement.elements.disposition.value !== 'refunded';
@@ -1298,10 +1502,10 @@ function synchronizeBooking(booking, previousBooking = null) {
   }
   booking.syncedDates = nextDates;
   const customerIndex = customers.findIndex((customer) => customer.sourceBookingId === booking.id);
-  const customer = { ...(customers[customerIndex] || {}), id: customers[customerIndex]?.id || crypto.randomUUID(), sourceBookingId: booking.id, name: booking.name, phone: booking.phone, building: buildingName, apartment: apartmentName, status: 'visitor', type: 'personal', createdAt: customers[customerIndex]?.createdAt || booking.createdAt };
+  const customer = { ...(customers[customerIndex] || {}), id: customers[customerIndex]?.id || crypto.randomUUID(), sourceBookingId: booking.id, name: booking.name, email: booking.email || '', phone: booking.phone, building: buildingName, apartment: apartmentName, rentalType: 'homestay-short-term', status: 'visitor', type: 'personal', createdAt: customers[customerIndex]?.createdAt || booking.createdAt };
   if (customerIndex >= 0) customers[customerIndex] = customer; else customers.push(customer);
   const reservationIndex = reservations.findIndex((reservation) => reservation.sourceBookingId === booking.id);
-  const reservation = { ...(reservations[reservationIndex] || {}), id: reservations[reservationIndex]?.id || crypto.randomUUID(), sourceBookingId: booking.id, name: booking.name, phone: booking.phone, building: buildingName, apartment: apartmentName, amount: booking.deposit, paymentMethod: booking.depositMethod || 'cash', status: booking.status === 'checkedOut' ? 'applied' : 'held', createdAt: reservations[reservationIndex]?.createdAt || booking.createdAt };
+  const reservation = { ...(reservations[reservationIndex] || {}), id: reservations[reservationIndex]?.id || crypto.randomUUID(), customerId: customer.id, tenantEmail: booking.email || '', sourceBookingId: booking.id, name: booking.name, phone: booking.phone, building: buildingName, apartment: apartmentName, amount: booking.deposit, paymentMethod: booking.depositMethod || 'cash', status: booking.status === 'checkedOut' ? 'applied' : 'held', createdAt: reservations[reservationIndex]?.createdAt || booking.createdAt };
   if (booking.deposit > 0 && reservationIndex >= 0) reservations[reservationIndex] = reservation;
   else if (booking.deposit > 0) reservations.push(reservation);
   else if (reservationIndex >= 0) reservations.splice(reservationIndex, 1);
@@ -1314,7 +1518,8 @@ function synchronizeBooking(booking, previousBooking = null) {
   const invoiceIndex = invoices.findIndex((invoice) => invoice.sourceBookingId === booking.id);
   const totalCharge = Number(booking.amount || 0) + Number(booking.serviceFee || 0);
   const balance = Math.max(totalCharge - Number(booking.deposit || 0), 0);
-  const invoice = { ...(invoices[invoiceIndex] || {}), id: invoices[invoiceIndex]?.id || crypto.randomUUID(), sourceBookingId: booking.id, paymentCode: invoices[invoiceIndex]?.paymentCode || `NVP-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`, building: buildingName, apartment: apartmentName, tenantName: booking.name, title: `Chốt trả phòng - ${booking.name}`, type: 'booking', roomAmount: Number(booking.amount || 0), serviceFee: Number(booking.serviceFee || 0), deposit: Number(booking.deposit || 0), amount: balance, dueDate: String(booking.checkedOutAt || booking.checkOut || '').slice(0, 10), approvalStatus: invoices[invoiceIndex]?.approvalStatus || 'pending', status: invoices[invoiceIndex]?.status || 'unpaid', createdAt: invoices[invoiceIndex]?.createdAt || booking.checkedOutAt || booking.createdAt };
+  const serviceItems = Number(booking.serviceFee || 0) > 0 ? [{ id: 'homestay-incidental', label: booking.serviceNote || 'Phí dịch vụ phát sinh', amount: Number(booking.serviceFee) }] : [];
+  const invoice = { ...(invoices[invoiceIndex] || {}), id: invoices[invoiceIndex]?.id || crypto.randomUUID(), customerId: customer.id, tenantEmail: booking.email || '', sourceBookingId: booking.id, paymentCode: invoices[invoiceIndex]?.paymentCode || `NVP-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`, building: buildingName, apartment: apartmentName, tenantName: booking.name, title: `Chốt trả phòng - ${booking.name}`, type: 'booking', roomAmount: Number(booking.amount || 0), serviceFee: Number(booking.serviceFee || 0), deposit: Number(booking.deposit || 0), depositApplied: Math.min(Number(booking.deposit || 0), totalCharge), billingLines: { rent: Number(booking.amount || 0), electricity: 0, water: 0, service: Number(booking.serviceFee || 0), serviceLabel: 'Phí dịch vụ phát sinh' }, serviceItems, amount: balance, dueDate: String(booking.checkedOutAt || booking.checkOut || '').slice(0, 10), approvalStatus: invoices[invoiceIndex]?.approvalStatus || 'pending', status: invoices[invoiceIndex]?.status || 'unpaid', createdAt: invoices[invoiceIndex]?.createdAt || booking.checkedOutAt || booking.createdAt };
   if (booking.status === 'checkedOut' && balance > 0 && invoiceIndex >= 0) invoices[invoiceIndex] = invoice;
   else if (booking.status === 'checkedOut' && balance > 0) invoices.push(invoice);
   else if (invoiceIndex >= 0) invoices.splice(invoiceIndex, 1);
@@ -1343,14 +1548,15 @@ function reconcileBookingInvoices() {
 
 function openBookingForm(bookingIndex = -1) {
   const booking = bookingIndex >= 0 ? bookings[bookingIndex] : null;
-  const apartmentOptions = buildings.flatMap((building) => (building.apartments || []).filter((apartment) => apartment.status === 'empty' || apartment.status === 'reserved' || `${building.name} | ${apartment.name}` === booking?.apartment).map((apartment) => `<option value="${escapeHtml(building.name)} | ${escapeHtml(apartment.name)}" ${`${building.name} | ${apartment.name}` === booking?.apartment ? 'selected' : ''}>${escapeHtml(building.name)} - ${escapeHtml(apartment.name)}</option>`)).join('');
+  const apartmentOptions = buildings.flatMap((building) => (building.apartments || []).filter((apartment) => apartment.propertyType === 'homestay' && (apartment.status === 'empty' || apartment.status === 'reserved' || `${building.name} | ${apartment.name}` === booking?.apartment)).map((apartment) => `<option value="${escapeHtml(building.name)} | ${escapeHtml(apartment.name)}" ${`${building.name} | ${apartment.name}` === booking?.apartment ? 'selected' : ''}>${escapeHtml(building.name)} - ${escapeHtml(apartment.name)}</option>`)).join('');
   const now = new Date();
   const checkIn = booking?.checkIn || new Date(now.getTime() + 60 * 60 * 1000).toISOString().slice(0, 16);
   const checkOut = booking?.checkOut || new Date(now.getTime() + 25 * 60 * 60 * 1000).toISOString().slice(0, 16);
   openModal(booking ? 'Sửa booking' : 'Tạo booking', `<form class="building-form" data-booking-form>
     <label>Khách lưu trú<input name="name" required maxlength="80" value="${escapeHtml(booking?.name || '')}" placeholder="Họ và tên khách"></label>
-    <label>Số điện thoại<input name="phone" required pattern="[0-9 +()-]{8,}" value="${escapeHtml(booking?.phone || '')}" placeholder="09xx xxx xxx"></label>
-    <label>Căn hộ/Homestay<select name="apartment" required><option value="">Chọn căn hộ hoặc Homestay</option>${apartmentOptions}</select></label>
+    <label>Email nhận hóa đơn<input name="email" type="email" maxlength="120" value="${escapeHtml(booking?.email || '')}" placeholder="Có thể bổ sung sau"></label>
+    <label>Số điện thoại<input name="phone" required pattern="[0-9 +\\(\\)\\-]{8,}" value="${escapeHtml(booking?.phone || '')}" placeholder="09xx xxx xxx"></label>
+    <label>Phòng Homestay<select name="apartment" required><option value="">Chọn phòng Homestay</option>${apartmentOptions}</select></label>
     <label>Nhận phòng<input name="checkIn" type="datetime-local" required value="${checkIn}"></label>
     <label>Trả phòng<input name="checkOut" type="datetime-local" required value="${checkOut}"></label>
     <label>Tiền phòng<input name="amount" type="number" min="0" required value="${Number(booking?.amount || 0)}"></label>
@@ -1361,7 +1567,16 @@ function openBookingForm(bookingIndex = -1) {
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">${booking ? 'Cập nhật booking' : 'Tạo booking'}</button></div>
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
-    document.querySelector('[data-booking-form]').addEventListener('submit', async (event) => {
+    const bookingForm = document.querySelector('[data-booking-form]');
+    addFormGuidance(bookingForm, {
+      apartment: 'Chỉ hiển thị căn đang trống, đang cọc hoặc căn của booking này.',
+      checkIn: 'Thời gian bắt đầu giữ lịch của căn.',
+      checkOut: 'Phải sau giờ nhận phòng; toàn bộ khoảng thời gian sẽ được khóa lịch.',
+      amount: 'Tổng tiền phòng của cả kỳ lưu trú.',
+      deposit: 'Tiền đã nhận; được ghi vào Sổ thu chi và trừ khi trả phòng.',
+      depositMethod: 'Chọn đúng phương thức đã nhận để đối soát.'
+    });
+    bookingForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       const documentFile = form.get('identityFile');
@@ -1378,7 +1593,7 @@ function openBookingForm(bookingIndex = -1) {
         return;
       }
       const previousBooking = booking ? { ...booking, syncedDates: [...(booking.syncedDates || [])] } : null;
-      const nextBooking = { ...booking, id: booking?.id || crypto.randomUUID(), name: form.get('name').trim(), phone: form.get('phone').trim(), identity: form.get('identity').trim(), apartment: form.get('apartment'), checkIn: form.get('checkIn'), checkOut: form.get('checkOut'), amount: parseMoney(form.get('amount')), deposit: parseMoney(form.get('deposit')), depositMethod: form.get('depositMethod'), ...document, status: booking?.status || 'booked', createdAt: booking?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const nextBooking = { ...booking, id: booking?.id || crypto.randomUUID(), name: form.get('name').trim(), email: form.get('email').trim().toLowerCase(), phone: form.get('phone').trim(), identity: form.get('identity').trim(), apartment: form.get('apartment'), checkIn: form.get('checkIn'), checkOut: form.get('checkOut'), amount: parseMoney(form.get('amount')), deposit: parseMoney(form.get('deposit')), depositMethod: form.get('depositMethod'), ...document, status: booking?.status || 'booked', createdAt: booking?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
       if (new Date(nextBooking.checkOut) <= new Date(nextBooking.checkIn)) { submitButton.disabled = false; submitButton.textContent = booking ? 'Cập nhật booking' : 'Tạo booking'; showToast('Thời gian trả phòng phải sau thời gian nhận phòng'); return; }
       if (bookingIndex >= 0) bookings[bookingIndex] = nextBooking; else bookings.push(nextBooking);
       synchronizeBooking(nextBooking, previousBooking);
@@ -1402,6 +1617,10 @@ function openBookingCheckout(bookingIndex) {
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Quay lại</button><button class="primary-button" type="submit">Xác nhận trả phòng</button></div>
   </form>`, () => {
     const formElement = document.querySelector('[data-booking-checkout-form]');
+    addFormGuidance(formElement, {
+      serviceFee: 'Nhập tổng phụ thu phát sinh; số này được cộng vào tiền phòng.',
+      serviceNote: 'Ghi rõ từng khoản để khách và quản lý dễ đối chiếu.'
+    });
     const totalElement = formElement.querySelector('[data-booking-checkout-total]');
     const updateTotal = () => {
       const roomAmount = parseMoney(formElement.elements.amount.value);
@@ -1463,6 +1682,121 @@ function findPreviousMeterLog(apartment, service, readingDate) {
     .at(-1);
 }
 
+function rentedApartmentsOnFloor(building, floor) {
+  return (building.apartments || []).filter((apartment) => String(apartment.floor ?? '').trim() === String(floor ?? '').trim() && customers.some((customer) => customerCoversApartment(customer, building, apartment)));
+}
+
+function floorWaterShare(building, apartment, month) {
+  const floorLogs = meterLogs.filter((item) => item.month === month && item.service === 'water' && item.targetType === 'floor' && item.building === building.name);
+  const capturedLogs = floorLogs.filter((item) => (item.allocations || []).length || (item.allocatedApartments || []).length);
+  const log = capturedLogs.findLast((item) => (item.allocations || []).some((allocation) => allocation.apartment === apartment.name) || (item.allocatedApartments || []).includes(apartment.name))
+    || (!capturedLogs.length ? floorLogs.filter((item) => String(item.floor ?? '') === String(apartment.floor ?? '')).at(-1) : null);
+  if (!log) return null;
+  const apartmentNames = Array.isArray(log.allocations) && log.allocations.length
+    ? log.allocations.map((allocation) => allocation.apartment)
+    : Array.isArray(log.allocatedApartments) && log.allocatedApartments.length ? log.allocatedApartments : rentedApartmentsOnFloor(building, apartment.floor).map((item) => item.name);
+  const index = apartmentNames.indexOf(apartment.name);
+  if (index < 0 || !apartmentNames.length) return { usage: 0, amount: 0 };
+  const totalAmount = Math.round(Number(log.amount || 0));
+  return {
+    usage: Number(log.usage || 0) / apartmentNames.length,
+    amount: Math.floor(totalAmount / apartmentNames.length) + (index < totalAmount % apartmentNames.length ? 1 : 0)
+  };
+}
+
+function openFloorWaterMeterForm() {
+  const eligibleBuildings = buildings.filter((building) => building.settings?.waterBillingMode === 'floor-metered' || meterLogs.some((log) => log.targetType === 'floor' && log.building === building.name));
+  if (!eligibleBuildings.length) { showToast('Chưa có tòa nhà dùng đồng hồ nước chung theo tầng'); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  openModal('Ghi nước theo tầng', `<form class="building-form" data-floor-water-form>
+    <p class="entity-summary">Nhập một lần cho cả tầng. Tổng tiền chia đều cho các phòng có hợp đồng trong kỳ; phần của phòng nhiều giường tiếp tục chia đều cho số người đang ở.</p>
+    <label>Tòa nhà<select name="building" required>${eligibleBuildings.map((building) => `<option value="${escapeHtml(building.name)}">${escapeHtml(building.name)}</option>`).join('')}</select></label>
+    <label>Tầng<select name="floor" required></select></label>
+    <label>Ngày chốt<input name="readingDate" type="date" required value="${today}"></label>
+    <label>Chỉ số nước cũ (m³)<input name="waterPrevious" type="number" min="0" step="0.01" required value="0"></label>
+    <label>Chỉ số nước mới (m³)<input name="waterCurrent" type="number" min="0" step="0.01" required value="0"></label>
+    <label>Đơn giá nước (đ/m³)<input name="waterRate" type="number" min="0" required value="0"></label>
+    <div class="entity-summary" data-floor-water-summary></div>
+    <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu chỉ số tầng</button></div>
+  </form>`, () => {
+    const form = document.querySelector('[data-floor-water-form]');
+    document.querySelector('[data-modal-cancel]').addEventListener('click', openUtilityManager);
+    addFormGuidance(form, {
+      building: 'Chỉ hiển thị các tòa đã chọn chế độ đồng hồ chung theo tầng.',
+      floor: 'Chọn tầng có đồng hồ nước vừa chốt.',
+      readingDate: 'Kỳ hóa đơn được xác định theo tháng của ngày chốt.',
+      waterPrevious: 'Tự lấy từ lần chốt gần nhất của đúng tầng này.',
+      waterCurrent: 'Phải lớn hơn hoặc bằng chỉ số cũ.',
+      waterRate: 'Tổng tiền tầng = phần m³ tăng thêm × đơn giá.'
+    });
+    const selectedBuilding = () => eligibleBuildings.find((building) => building.name === form.elements.building.value);
+    const updateSummary = () => {
+      const building = selectedBuilding();
+      const floor = form.elements.floor.value;
+      const renters = building ? rentedApartmentsOnFloor(building, floor) : [];
+      const usage = Math.max(Number(form.elements.waterCurrent.value || 0) - Number(form.elements.waterPrevious.value || 0), 0);
+      const amount = Math.round(usage * parseMoney(form.elements.waterRate.value));
+      const average = renters.length ? Math.floor(amount / renters.length) : 0;
+      form.querySelector('[data-floor-water-summary]').innerHTML = renters.length
+        ? `Tổng tầng: <strong>${amount.toLocaleString('vi-VN')} đ</strong> · ${renters.length} căn đang thuê · dự kiến ${average.toLocaleString('vi-VN')} đ/căn${amount % renters.length ? ' (phần lẻ được cộng lần lượt 1 đ)' : ''}.`
+        : 'Tầng này chưa có căn đang thuê; chưa thể phân bổ tiền nước.';
+    };
+    const updateDefaults = () => {
+      const building = selectedBuilding();
+      const floor = form.elements.floor.value;
+      const cutoff = new Date(`${form.elements.readingDate.value}T23:59:59`).getTime();
+      const selectedMonth = form.elements.readingDate.value.slice(0, 7);
+      const previousLog = meterLogs
+        .filter((log) => log.service === 'water' && log.targetType === 'floor' && log.building === building?.name && String(log.floor ?? '') === floor && log.month !== selectedMonth && new Date(`${log.readingDate || log.createdAt || '1970-01-01'}`).getTime() <= cutoff)
+        .sort((first, second) => new Date(first.readingDate || first.createdAt || 0) - new Date(second.readingDate || second.createdAt || 0))
+        .at(-1);
+      form.elements.waterPrevious.value = previousLog?.current ?? 0;
+      form.elements.waterCurrent.value = previousLog?.current ?? 0;
+      form.elements.waterRate.value = Number(building?.settings?.waterRate || 0);
+      updateSummary();
+    };
+    const updateFloors = () => {
+      const building = selectedBuilding();
+      form.elements.floor.innerHTML = getBuildingFloors(building).map((floor) => `<option value="${escapeHtml(floor)}">Tầng ${escapeHtml(floor)}</option>`).join('');
+      updateDefaults();
+    };
+    form.elements.building.addEventListener('change', updateFloors);
+    form.elements.floor.addEventListener('change', updateDefaults);
+    form.elements.readingDate.addEventListener('change', updateDefaults);
+    ['waterPrevious', 'waterCurrent', 'waterRate'].forEach((name) => form.elements[name].addEventListener('input', updateSummary));
+    updateFloors();
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const building = selectedBuilding();
+      const floor = form.elements.floor.value;
+      const renters = rentedApartmentsOnFloor(building, floor);
+      const previous = Number(form.elements.waterPrevious.value || 0);
+      const current = Number(form.elements.waterCurrent.value || 0);
+      if (!renters.length) { showToast('Tầng này chưa có căn đang thuê để phân bổ'); return; }
+      if (current < previous) { showToast('Chỉ số nước mới phải lớn hơn hoặc bằng chỉ số cũ'); return; }
+      const readingDate = form.elements.readingDate.value;
+      const rate = parseMoney(form.elements.waterRate.value);
+      const usage = current - previous;
+      const month = readingDate.slice(0, 7);
+      const existingFloorLog = meterLogs.some((item) => item.month === month && item.service === 'water' && item.targetType === 'floor' && item.building === building.name && String(item.floor ?? '') === floor);
+      if (building.settings?.waterBillingMode !== 'floor-metered' && !existingFloorLog) { showToast('Tòa này không còn dùng đồng hồ chung tầng; chỉ có thể sửa kỳ đã ghi trước đó'); return; }
+      const closed = invoices.some((invoice) => invoice.source === 'monthly-closing' && invoice.month === month && invoice.building === building.name && renters.some((apartment) => apartment.name === invoice.apartment));
+      if (closed) { showToast('Tháng này đã tạo hóa đơn; không thể sửa chỉ số nước tầng'); return; }
+      const allocations = renters.map((apartment) => {
+        const customer = customers.find((item) => item.status === 'renting' && item.apartment === apartment.name && (!item.building || item.building === building.name));
+        return { apartment: apartment.name, tenantEmail: customer?.email || '', tenantName: customer?.name || '' };
+      });
+      const log = { apartment: `${building.name} | Tầng ${floor}`, building: building.name, floor, targetType: 'floor', allocationMethod: 'equal-rented-apartments', allocatedApartments: renters.map((apartment) => apartment.name), allocations, service: 'water', waterMode: 'floor-metered', previous, current, usage, rate, amount: Math.round(usage * rate), month, readingDate, createdAt: new Date().toISOString() };
+      const existingIndexes = meterLogs.map((item, index) => ({ item, index })).filter(({ item }) => item.month === month && item.service === 'water' && item.targetType === 'floor' && item.building === building.name && String(item.floor ?? '') === floor).map(({ index }) => index);
+      existingIndexes.reverse().forEach((index) => meterLogs.splice(index, 1));
+      meterLogs.push(log);
+      persistCollection(meterLogStorageKey, meterLogs);
+      openUtilityManager();
+      showToast(`${existingIndexes.length ? 'Đã cập nhật' : 'Đã lưu'} nước tầng ${floor}; tiền sẽ chia cho ${renters.length} căn đang thuê khi chốt tháng`);
+    });
+  });
+}
+
 function openMeterForm() {
   const buildingSettings = buildings[selectedBuildingIndex]?.settings || {};
   const electricityRate = Number(buildingSettings.electricityRate || 0);
@@ -1471,7 +1805,8 @@ function openMeterForm() {
     const electricityFloorRate = Number((building.settings?.electricityFloorRates || {})[apartment.floor] || 0);
     const electricityRateForApartment = Number(apartment.electricityRate || electricityFloorRate || building.settings?.electricityRate || electricityRate);
     const fixedAmount = Number(apartment.waterFixedAmount || floorRate || building.settings?.waterFixedAmount || 0);
-    return `<option value="${escapeHtml(building.name)} | ${escapeHtml(apartment.name)}" data-building-index="${buildings.indexOf(building)}" data-meter-id="${escapeHtml(apartment.meterId || '')}" data-electricity-rate="${electricityRateForApartment}" data-electricity-baseline="${Number(apartment.electricityBaseline || 0)}" data-water-baseline="${Number(apartment.waterBaseline || 0)}" data-water-mode="${escapeHtml(apartment.waterFixedAmount || floorRate || building.settings?.waterFixedAmount ? 'fixed' : (building.settings?.waterBillingMode || 'metered'))}" data-water-fixed="${fixedAmount}" data-water-floor="${Number(apartment.floor || 0)}">${escapeHtml(building.name)} - ${escapeHtml(apartment.name)}${apartment.floor ? ` · Tầng ${apartment.floor}` : ''}</option>`;
+    const waterMode = building.settings?.waterBillingMode === 'floor-metered' ? 'floor-metered' : (apartment.waterFixedAmount || floorRate || building.settings?.waterFixedAmount ? 'fixed' : (apartment.waterBillingMode || building.settings?.waterBillingMode || 'metered'));
+    return `<option value="${escapeHtml(building.name)} | ${escapeHtml(apartment.name)}" data-building-index="${buildings.indexOf(building)}" data-meter-id="${escapeHtml(apartment.meterId || '')}" data-electricity-rate="${electricityRateForApartment}" data-electricity-baseline="${Number(apartment.electricityBaseline || 0)}" data-water-baseline="${Number(apartment.waterBaseline || 0)}" data-water-mode="${escapeHtml(waterMode)}" data-water-fixed="${fixedAmount}" data-water-floor="${escapeHtml(apartment.floor ?? '')}">${escapeHtml(building.name)} - ${escapeHtml(apartment.name)}${apartment.floor ? ` · Tầng ${apartment.floor}` : ''}</option>`;
   })).join('');
   const today = new Date().toISOString().slice(0, 10);
   openModal('Ghi chỉ số', `<form class="building-form" data-meter-form>
@@ -1483,7 +1818,7 @@ function openMeterForm() {
       <label>Đơn giá điện (đ/kWh)<input name="electricityRate" type="number" min="0" required value="${electricityRate}"></label>
     </div></section>
     <section class="form-section"><div class="form-section-title"><strong>Chỉ số nước</strong></div><div class="form-grid">
-      <label>Cách tính nước<select name="waterMode" data-water-mode-select><option value="metered">Theo m³</option><option value="fixed">Mức cố định</option></select></label>
+      <label>Cách tính nước<select name="waterMode" data-water-mode-select><option value="metered">Đồng hồ riêng của căn</option><option value="floor-metered">Đồng hồ chung tầng</option><option value="fixed">Mức cố định của căn</option></select></label>
       <label>Chỉ số nước cũ (m³)<input name="waterPrevious" type="number" min="0" step="0.01" required value="0"></label>
       <label>Chỉ số nước mới (m³)<input name="waterCurrent" type="number" min="0" step="0.01" required value="0"></label>
       <label>Đơn giá / mức thu nước<input name="waterRate" type="number" min="0" required value="0"><small class="form-hint" data-water-rate-hint></small></label>
@@ -1492,6 +1827,15 @@ function openMeterForm() {
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
     const form = document.querySelector('[data-meter-form]');
+    addFormGuidance(form, {
+      apartment: 'Chọn căn để lấy mức giá, chỉ số trước và công tơ đã gán.',
+      electricityPrevious: 'Tự lấy từ lần chốt gần nhất hoặc chỉ số bàn giao.',
+      electricityCurrent: 'Tiền điện tính trên phần chênh lệch so với chỉ số cũ.',
+      electricityRate: 'Ưu tiên giá riêng của căn, sau đó theo tầng và tòa.',
+      waterMode: 'Đồng hồ chung tầng phải được nhập bằng nút “Ghi nước theo tầng” để chia đúng cho các căn.',
+      waterPrevious: 'Tự lấy từ lần chốt gần nhất hoặc chỉ số bàn giao.',
+      waterCurrent: 'Tiền nước tính trên phần chênh lệch so với chỉ số cũ.'
+    });
     const updateDefaults = () => {
       const selectedApartment = form.querySelector('[name="apartment"] option:checked');
       const selectedBuilding = buildings[Number(selectedApartment?.dataset.buildingIndex)] || buildings[selectedBuildingIndex];
@@ -1507,10 +1851,12 @@ function openMeterForm() {
       form.elements.electricityRate.value = Number(selectedApartment?.dataset.electricityRate || selectedSettings.electricityRate || electricityRate);
       form.elements.waterMode.value = waterMode;
       form.elements.waterRate.value = waterRate;
-      form.elements.waterCurrent.disabled = waterMode === 'fixed';
-      form.elements.waterPrevious.disabled = waterMode === 'fixed';
+      form.elements.waterMode.disabled = waterMode === 'floor-metered';
+      form.elements.waterCurrent.disabled = ['fixed', 'floor-metered'].includes(waterMode);
+      form.elements.waterPrevious.disabled = ['fixed', 'floor-metered'].includes(waterMode);
+      form.elements.waterRate.disabled = waterMode === 'floor-metered';
       if (waterMode === 'fixed') form.elements.waterCurrent.value = form.elements.waterPrevious.value;
-      form.querySelector('[data-water-rate-hint]').textContent = waterMode === 'fixed' ? 'Mức thu cố định, không tính theo chỉ số.' : 'Số tiền = m³ tiêu thụ × đơn giá.';
+      form.querySelector('[data-water-rate-hint]').textContent = waterMode === 'fixed' ? 'Mức thu cố định, không tính theo chỉ số.' : waterMode === 'floor-metered' ? 'Nước của căn được phân bổ từ đồng hồ chung tầng.' : 'Số tiền = m³ tiêu thụ × đơn giá.';
     };
     form.elements.apartment.addEventListener('change', updateDefaults);
     form.elements.readingDate.addEventListener('change', updateDefaults);
@@ -1550,7 +1896,7 @@ function openMeterForm() {
       const month = String(readingDate).slice(0, 7);
       const electricityPrevious = Number(values.get('electricityPrevious') || 0);
       const electricityCurrent = Number(values.get('electricityCurrent') || 0);
-      const waterMode = values.get('waterMode') || 'metered';
+      const waterMode = formElement.elements.waterMode.value || 'metered';
       const waterPrevious = waterMode === 'fixed' ? Number(formElement.elements.waterPrevious.value || 0) : Number(values.get('waterPrevious') || 0);
       const waterCurrent = waterMode === 'fixed' ? waterPrevious : Number(values.get('waterCurrent') || 0);
       if (electricityCurrent < electricityPrevious) { showToast('Chỉ số điện mới phải lớn hơn hoặc bằng chỉ số cũ'); return; }
@@ -1563,26 +1909,21 @@ function openMeterForm() {
       const waterAmount = waterMode === 'fixed' ? waterUnitRate : waterUsage * waterUnitRate;
       const apartmentKey = values.get('apartment');
       const createdAt = new Date().toISOString();
-      meterLogs.push(
-        { apartment: apartmentKey, service: 'electricity', waterMode: 'metered', previous: electricityPrevious, current: electricityCurrent, usage: electricityUsage, rate: electricityUnitRate, amount: electricityAmount, month, readingDate, createdAt },
-        { apartment: apartmentKey, service: 'water', waterMode, previous: waterPrevious, current: waterCurrent, usage: waterUsage, rate: waterUnitRate, amount: waterAmount, month, readingDate, createdAt }
-      );
+      meterLogs.push({ apartment: apartmentKey, service: 'electricity', waterMode: 'metered', previous: electricityPrevious, current: electricityCurrent, usage: electricityUsage, rate: electricityUnitRate, amount: electricityAmount, month, readingDate, createdAt });
+      if (waterMode !== 'floor-metered') meterLogs.push({ apartment: apartmentKey, service: 'water', waterMode, previous: waterPrevious, current: waterCurrent, usage: waterUsage, rate: waterUnitRate, amount: waterAmount, month, readingDate, createdAt });
       const selectedApartment = formElement.querySelector('[name="apartment"] option:checked');
       const apartmentName = selectedApartment?.value.split(' | ').slice(-1)[0] || '';
       const apartmentRecord = buildings[Number(selectedApartment?.dataset.buildingIndex)]?.apartments?.find((apartment) => apartment.name === apartmentName);
       if (apartmentRecord) {
         apartmentRecord.latestElectricityReading = electricityCurrent;
-        apartmentRecord.latestWaterReading = waterCurrent;
+        if (waterMode !== 'floor-metered') apartmentRecord.latestWaterReading = waterCurrent;
         persistBuildings(false);
       }
       const buildingName = buildings[Number(selectedApartment?.dataset.buildingIndex)]?.name || '';
-      const tenant = customers.find((customer) => customer.apartment === apartmentName && (!customer.building || customer.building === buildingName) && customer.status === 'renting');
-      invoices.push({ id: crypto.randomUUID(), paymentCode: `NVP-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`, title: `Điện nước ${month} - ${apartmentName}`, building: buildingName, apartment: apartmentName, tenantEmail: tenant?.email || '', tenantName: tenant?.name || '', type: 'utilities', month, amount: electricityAmount + waterAmount, utilityLines: { electricity: electricityAmount, water: waterAmount }, dueDate: readingDate, approvalStatus: 'pending', status: 'unpaid', createdAt });
       persistCollection(meterLogStorageKey, meterLogs);
-      persistCollection(invoiceStorageKey, invoices);
       updateDashboard();
       closeModal();
-      showToast(`Đã chốt điện nước ngày ${new Date(`${readingDate}T00:00:00`).toLocaleDateString('vi-VN')}`);
+      showToast(`Đã lưu chỉ số ngày ${new Date(`${readingDate}T00:00:00`).toLocaleDateString('vi-VN')}; hóa đơn được tạo khi chốt tháng`);
     });
   });
 }
@@ -1596,13 +1937,14 @@ function openUtilityManager() {
   const currentMonth = new Date().toISOString().slice(0, 7);
   let liveReadings = new Map();
   const render = (month = currentMonth, buildingName = '') => {
-    const apartments = buildings.filter((building) => !buildingName || building.name === buildingName).flatMap((building) => (building.apartments || []).map((apartment) => ({ building: building.name, apartment: apartment.name, meterId: apartment.meterId || '', currentReading: liveReadings.get(apartment.meterId)?.current ?? apartment.latestElectricityReading, key: `${building.name} | ${apartment.name}` })));
+    const apartments = buildings.filter((building) => !buildingName || building.name === buildingName).flatMap((building) => (building.apartments || []).map((apartment) => ({ building: building.name, buildingRecord: building, apartment: apartment.name, apartmentRecord: apartment, meterId: apartment.meterId || '', currentReading: liveReadings.get(apartment.meterId)?.current ?? apartment.latestElectricityReading, key: `${building.name} | ${apartment.name}` })));
     const rows = apartments.map((item) => {
       const records = meterLogs.filter((log) => log.month === month && log.apartment === item.key);
       const electricity = records.filter((log) => log.service === 'electricity').reduce((total, log) => total + Number(log.usage || 0), 0);
-      const water = records.filter((log) => log.service === 'water').reduce((total, log) => total + Number(log.usage || 0), 0);
+      const sharedFloorWater = floorWaterShare(item.buildingRecord, item.apartmentRecord, month);
+      const water = sharedFloorWater?.usage ?? records.filter((log) => log.service === 'water').reduce((total, log) => total + Number(log.usage || 0), 0);
       const electricityAmount = records.filter((log) => log.service === 'electricity').reduce((total, log) => total + Number(log.amount || 0), 0);
-      const waterAmount = records.filter((log) => log.service === 'water').reduce((total, log) => total + Number(log.amount || 0), 0);
+      const waterAmount = sharedFloorWater?.amount ?? records.filter((log) => log.service === 'water').reduce((total, log) => total + Number(log.amount || 0), 0);
       return { ...item, electricity, water, electricityAmount, waterAmount, total: electricityAmount + waterAmount };
     });
     const total = rows.reduce((summary, item) => ({ electricity: summary.electricity + item.electricity, water: summary.water + item.water, electricityAmount: summary.electricityAmount + item.electricityAmount, waterAmount: summary.waterAmount + item.waterAmount, amount: summary.amount + item.total }), { electricity: 0, water: 0, electricityAmount: 0, waterAmount: 0, amount: 0 });
@@ -1613,14 +1955,21 @@ function openUtilityManager() {
     const refresh = () => { container.innerHTML = render(container.querySelector('[data-utility-month]').value, container.querySelector('[data-utility-building]').value); bind(); };
     container.querySelector('[data-utility-month]').addEventListener('change', refresh);
     container.querySelector('[data-utility-building]').addEventListener('change', refresh);
-    container.querySelector('[data-utility-add]').addEventListener('click', openMeterForm);
+    const apartmentMeterButton = container.querySelector('[data-utility-add]');
+    apartmentMeterButton.textContent = '＋ Ghi chỉ số từng căn';
+    apartmentMeterButton.insertAdjacentHTML('beforebegin', '<button class="modal-secondary" type="button" data-utility-floor-water>＋ Ghi nước theo tầng</button>');
+    apartmentMeterButton.addEventListener('click', openMeterForm);
+    container.querySelector('[data-utility-floor-water]').addEventListener('click', openFloorWaterMeterForm);
     container.querySelector('[data-utility-close]').addEventListener('click', async () => {
       const button = container.querySelector('[data-utility-close]');
       button.disabled = true;
       try {
+        window.clearTimeout(syncTimeout);
+        await syncToServer(false);
         const response = await fetch(`${apiBaseUrl}/utilities/close`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month: container.querySelector('[data-utility-month]').value }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Không thể chốt điện nước');
+        await pullFromServer();
         showToast(`Đã tạo ${result.created} hóa đơn điện nước.`);
       } catch (error) { button.disabled = false; showToast(error.message || 'Không thể chốt điện nước'); }
     });
@@ -1648,7 +1997,12 @@ function openCommissionForm() {
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Tạo hoa hồng</button></div>
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
-    document.querySelector('[data-commission-form]').addEventListener('submit', (event) => {
+    const commissionForm = document.querySelector('[data-commission-form]');
+    addFormGuidance(commissionForm, {
+      reference: 'Nhập tên khách hoặc mã booking để truy vết khoản hoa hồng.',
+      amount: 'Chỉ ghi nhận khoản phải trả; Sổ thu chi cập nhật khi xác nhận thanh toán.'
+    });
+    commissionForm.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       commissions.push({ id: crypto.randomUUID(), partner: form.get('partner').trim(), reference: form.get('reference').trim(), amount: parseMoney(form.get('amount')), status: 'pending', createdAt: new Date().toISOString() });
@@ -1740,6 +2094,10 @@ function openInvoiceCollectionForm(invoiceIndex, returnView = 'invoices') {
   openModal('Ghi nhận thu tiền', `<form class="building-form" data-invoice-collection-form><div class="entity-summary">${escapeHtml(invoice.title)} · <strong>${Number(invoice.amount || 0).toLocaleString('vi-VN')} đ</strong></div><label>Số tiền thực nhận<input name="amount" inputmode="numeric" required value="${Number(invoice.amount || 0)}"></label><label>Phương thức<select name="method"><option value="cash">Tiền mặt</option><option value="bank-transfer">Chuyển khoản</option><option value="other">Khác</option></select></label><div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Xác nhận đã thu</button></div></form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', () => returnView === 'schedule' ? openPaymentSchedule() : openInvoiceManager('unpaid'));
     const formElement = document.querySelector('[data-invoice-collection-form]');
+    addFormGuidance(formElement, {
+      amount: 'Phải bằng hoặc lớn hơn số tiền hóa đơn; Sổ thu chi ghi đúng số thực nhận.',
+      method: 'Chọn phương thức thực tế để đối soát giao dịch.'
+    });
     setupMoneyInputs(formElement);
     formElement.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1900,7 +2258,15 @@ function openInvoiceForm() {
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu hóa đơn</button></div>
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
-    document.querySelector('[data-invoice-form]').addEventListener('submit', (event) => {
+    const invoiceForm = document.querySelector('[data-invoice-form]');
+    addFormGuidance(invoiceForm, {
+      tenantEmail: 'Liên kết người nhận hóa đơn trên ứng dụng cư dân.',
+      type: 'Dùng để phân loại báo cáo; không tự thay đổi số tiền.',
+      amount: 'Tổng số tiền cần thu trên hóa đơn này.',
+      dueDate: 'Dùng để xếp lịch thu và xác định hóa đơn quá hạn.',
+      status: 'Hóa đơn mới vẫn cần chủ tài khoản duyệt trước khi gửi cho cư dân.'
+    });
+    invoiceForm.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       const tenantEmail = form.get('tenantEmail');
@@ -1944,15 +2310,20 @@ function getInvoiceDetails(invoice) {
   const building = buildings.find((item) => item.name === invoice.building) || buildings[selectedBuildingIndex] || {};
   const settings = building.settings || {};
   const sharedSettings = resolveInvoiceSettings(building);
-  return { company: sharedSettings.companyName, logo: sharedSettings.invoiceLogoUrl, manager: settings.managerName || '', phone: settings.companyPhone || '', address: [building.address, settings.area, settings.ward, settings.city].filter(Boolean).join(', '), bank: [settings.bankName, settings.bankNumber, settings.bankHolder].filter(Boolean).join(' · '), customer: invoice.tenantName || customers.find((item) => item.email === invoice.tenantEmail)?.name || invoice.tenantEmail || 'Chưa gán khách hàng' };
+  const customer = customers.find((item) => invoice.customerId && item.id === invoice.customerId) || customers.find((item) => invoice.tenantEmail && item.email === invoice.tenantEmail);
+  return { company: sharedSettings.companyName, logo: sharedSettings.invoiceLogoUrl, manager: settings.managerName || '', phone: settings.companyPhone || '', address: [building.address, settings.area, settings.ward, settings.city].filter(Boolean).join(', '), bank: [settings.bankName, settings.bankNumber, settings.bankHolder].filter(Boolean).join(' · '), customer: invoice.tenantName || customer?.name || invoice.tenantEmail || 'Chưa gán khách hàng' };
 }
 
 function getInvoiceLineItems(invoice) {
+  const occupantCount = Number(invoice.allocationRules?.occupants || 0);
+  const utilityLabel = (utility, fallback) => invoice.allocationRules?.[utility] === 'per-person-fixed' ? `${fallback} · cố định/người` : invoice.allocationRules?.[utility] === 'equal-occupants' ? `${fallback} · chia đều ${occupantCount} người` : invoice.allocationRules?.[utility] === 'contract-fixed' ? `${fallback} · cố định hợp đồng` : fallback;
   if (invoice.billingLines) return [
     ['Tiền nhà', invoice.billingLines.rent],
-    ['Tiền điện', invoice.billingLines.electricity],
-    ['Tiền nước', invoice.billingLines.water],
-    [invoice.billingLines.serviceLabel || 'Phí dịch vụ', invoice.billingLines.service],
+    [utilityLabel('electricity', 'Tiền điện'), invoice.billingLines.electricity],
+    [utilityLabel('water', 'Tiền nước'), invoice.billingLines.water],
+    ...(Array.isArray(invoice.serviceItems) && invoice.serviceItems.length
+      ? invoice.serviceItems.map((service) => [service.label || 'Phí dịch vụ', service.amount])
+      : [[invoice.billingLines.serviceLabel || 'Phí dịch vụ', invoice.billingLines.service]]),
     ...(invoice.extraCharges || []).map((charge) => [charge.label || 'Chi phí phát sinh', charge.amount]),
     ...(Number(invoice.depositApplied || 0) > 0 ? [['Khấu trừ tiền cọc', -Number(invoice.depositApplied)]] : [])
   ].filter(([, amount]) => Number(amount || 0) !== 0);
@@ -1989,6 +2360,10 @@ function openInvoiceEditForm(invoiceIndex) {
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="modal-secondary" type="submit">Lưu chỉnh sửa</button>${currentUserRole === 'owner' ? '<button class="primary-button" type="submit" data-invoice-approve-submit>Duyệt & gửi</button>' : ''}</div>
   </form>`, () => {
     const formElement = document.querySelector('[data-invoice-edit-form]');
+    addFormGuidance(formElement, {
+      dueDate: 'Hóa đơn quá ngày này sẽ xuất hiện trong nhóm quá hạn.',
+      service: 'Có thể điều chỉnh tổng phí dịch vụ trước khi duyệt.'
+    });
     const chargeContainer = formElement.querySelector('[data-extra-charges]');
     const updateTotal = () => {
       const form = new FormData(formElement);
@@ -2018,7 +2393,9 @@ function openInvoiceEditForm(invoiceIndex) {
       const form = new FormData(formElement);
       const nextBillingLines = { rent: parseMoney(form.get('rent')), electricity: parseMoney(form.get('electricity')), water: parseMoney(form.get('water')), service: parseMoney(form.get('service')), serviceLabel: form.get('serviceLabel').trim() || 'Phí dịch vụ' };
       const extraCharges = Array.from(chargeContainer.querySelectorAll('[data-extra-charge]')).map((row) => ({ label: row.querySelector('[name="extraLabel"]').value.trim(), amount: parseMoney(row.querySelector('[name="extraAmount"]').value) })).filter((charge) => charge.label && charge.amount > 0);
-      Object.assign(invoice, { title: form.get('title').trim(), dueDate: form.get('dueDate'), type: 'monthly', billingLines: nextBillingLines, utilityLines: { electricity: nextBillingLines.electricity, water: nextBillingLines.water }, extraCharges, amount: Object.values(nextBillingLines).filter((value) => typeof value === 'number').reduce((total, value) => total + value, 0) + extraCharges.reduce((total, charge) => total + charge.amount, 0), updatedAt: new Date().toISOString() });
+      const serviceItems = nextBillingLines.service > 0 ? [{ id: '', label: nextBillingLines.serviceLabel, amount: nextBillingLines.service }] : [];
+      const grossAmount = Object.values(nextBillingLines).filter((value) => typeof value === 'number').reduce((total, value) => total + value, 0) + extraCharges.reduce((total, charge) => total + charge.amount, 0);
+      Object.assign(invoice, { title: form.get('title').trim(), dueDate: form.get('dueDate'), type: 'monthly', billingLines: nextBillingLines, serviceItems, utilityLines: { electricity: nextBillingLines.electricity, water: nextBillingLines.water }, extraCharges, amount: Math.max(grossAmount - Number(invoice.depositApplied || 0), 0), updatedAt: new Date().toISOString() });
       localStorage.setItem(invoiceStorageKey, JSON.stringify(invoices));
       try {
         const response = await fetch(`${apiBaseUrl}/state`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: { [invoiceStorageKey]: JSON.stringify(invoices) } }) });
@@ -2105,8 +2482,18 @@ function openCashflowForm() {
     <div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu giao dịch</button></div>
   </form>`, () => {
     document.querySelector('[data-modal-cancel]').addEventListener('click', closeModal);
-    setupMoneyInputs(document.querySelector('[data-cashflow-form]'));
-    document.querySelector('[data-cashflow-form]').addEventListener('submit', (event) => {
+    const cashflowForm = document.querySelector('[data-cashflow-form]');
+    addFormGuidance(cashflowForm, {
+      type: 'Khoản thu tăng tiền vào; khoản chi tăng tiền ra.',
+      category: 'Dùng để phân nhóm và tổng hợp báo cáo tài chính.',
+      method: 'Phương thức thực tế của giao dịch.',
+      amount: 'Giao dịch thủ công ảnh hưởng cả dòng tiền và báo cáo thu chi.',
+      transactionDate: 'Ngày nghiệp vụ được dùng khi lọc báo cáo theo tháng.',
+      building: 'Chọn tòa nếu giao dịch thuộc riêng một tòa; để trống nếu dùng chung.',
+      apartment: 'Chỉ nhập khi giao dịch liên quan trực tiếp đến một căn.'
+    });
+    setupMoneyInputs(cashflowForm);
+    cashflowForm.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       cashflow.push({ id: crypto.randomUUID(), title: form.get('title').trim(), type: form.get('type'), amount: parseMoney(form.get('amount')), category: form.get('category'), method: form.get('method'), building: form.get('building'), apartment: form.get('apartment').trim(), transactionDate: form.get('transactionDate'), sourceType: 'manual', sourceId: crypto.randomUUID(), recordedBy: currentUserName, affectsCash: true, affectsProfit: true, createdAt: new Date().toISOString() });
@@ -2247,6 +2634,20 @@ function openAssetOperations(type) {
       const record = records[recordIndex] || {};
       openModal(`${recordIndex >= 0 ? 'Sửa' : 'Thêm'} - ${config.title}`, `<form class="building-form" data-operation-form>${config.fields}<div class="form-actions"><button class="modal-secondary" type="button" data-modal-cancel>Hủy</button><button class="primary-button" type="submit">Lưu</button></div></form>`, () => {
         const formElement = document.querySelector('[data-operation-form]');
+        if (type === 'assets') addFormGuidance(formElement, {
+          purchaseAmount: 'Số tiền lớn hơn 0 được ghi thành khoản chi mua tài sản.',
+          paymentMethod: 'Chọn phương thức thực tế để đối soát Sổ thu chi.',
+          status: 'Đã thanh lý sẽ loại tài sản khỏi nhóm đang sử dụng.'
+        });
+        if (type === 'asset-fix') addFormGuidance(formElement, {
+          cost: 'Chi phí được ghi vào Sổ thu chi khi trạng thái là Đã hoàn tất.',
+          completedAt: 'Chỉ nhập khi việc sửa chữa đã hoàn thành.',
+          status: 'Đã hoàn tất sẽ đưa tài sản trở lại trạng thái đang sử dụng.'
+        });
+        if (type === 'moving-logs') addFormGuidance(formElement, {
+          from: 'Kho hoặc vị trí hiện tại của tài sản.',
+          to: 'Sau khi lưu, tài sản được chuyển sang kho này.'
+        });
         Object.entries(record).forEach(([key, value]) => { const field = formElement.elements[key]; if (field) field.value = value; });
         document.querySelector('[data-modal-cancel]').addEventListener('click', () => openAssetOperations(type));
         setupMoneyInputs(formElement);
@@ -2381,18 +2782,22 @@ function queueServerSync(key) {
   syncTimeout = window.setTimeout(() => syncToServer(false), 500);
 }
 
-async function syncToServer(showResult = true) {
-  const keys = [...pendingSyncKeys];
-  if (!keys.length) return;
-  pendingSyncKeys.clear();
-  try {
-    const response = await fetch(`${apiBaseUrl}/state`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: collectLocalState(keys) }) });
-    if (!response.ok) throw new Error('Sync failed');
-    if (showResult) showToast('Đã đồng bộ dữ liệu lên máy chủ');
-  } catch (error) {
-    keys.forEach((key) => pendingSyncKeys.add(key));
-    if (showResult) showToast('Không kết nối được máy chủ API');
-  }
+function syncToServer(showResult = true) {
+  const operation = async () => {
+    const keys = [...pendingSyncKeys];
+    if (!keys.length) return;
+    pendingSyncKeys.clear();
+    try {
+      const response = await fetch(`${apiBaseUrl}/state`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: collectLocalState(keys) }) });
+      if (!response.ok) throw new Error('Sync failed');
+      if (showResult) showToast('Đã đồng bộ dữ liệu lên máy chủ');
+    } catch (error) {
+      keys.forEach((key) => pendingSyncKeys.add(key));
+      if (showResult) showToast('Không kết nối được máy chủ API');
+    }
+  };
+  syncPromise = syncPromise.then(operation, operation);
+  return syncPromise;
 }
 
 async function pullFromServer() {
@@ -2828,5 +3233,5 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-document.documentElement.dataset.appVersion = '67';
+document.documentElement.dataset.appVersion = '73';
 

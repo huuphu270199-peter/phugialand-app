@@ -66,7 +66,7 @@ const tuyaSingaporeEndpoint = tuyaDataCenters.singapore.endpoint;
 const tuyaSingaporeMqEndpoint = 'wss://mqe.tuyaus.com:8285/';
 const loginAttempts = new Map();
 const administrativeUnitsUrl = 'https://provinces.open-api.vn/api/v2/?depth=2';
-const applicationRelease = '2026-09-12.3';
+const applicationRelease = '2026-09-12.7';
 const bankDirectoryUrl = process.env.NVP_BANK_DIRECTORY_URL === undefined ? 'https://api.vietqr.io/v2/banks' : String(process.env.NVP_BANK_DIRECTORY_URL);
 const fallbackBanks = [
   ['970405', 'Agribank', 'Ngân hàng Nông nghiệp và Phát triển Nông thôn Việt Nam'],
@@ -239,6 +239,47 @@ function validateIncomingFinancialState(incoming) {
     try { catalogs = JSON.parse(incoming['nvp-catalogs'] || '{}'); } catch { return 'nvp-catalogs must contain valid JSON'; }
     const amounts = [...(catalogs.assets || []).map((item) => item.purchaseAmount || 0), ...(catalogs['asset-fix'] || []).map((item) => item.cost || 0)];
     if (amounts.some((amount) => !Number.isFinite(Number(amount)) || Number(amount) < 0)) return 'nvp-catalogs contains invalid financial data';
+  }
+  return '';
+}
+
+function validateRentalCustomers(state) {
+  const buildings = parseStateValue(state, 'nvp-buildings', []);
+  const customers = parseStateValue(state, 'nvp-customers', []);
+  const claims = new Map();
+  for (const building of buildings) {
+    for (const service of building.services || []) {
+      if (service.billingMode === 'monthly' && !['contract', 'apartment', 'person'].includes(service.allocationBasis || 'apartment')) return `Invalid service allocation in ${building.name}`;
+    }
+    for (const apartment of building.apartments || []) {
+      if (!['metered', 'fixed'].includes(apartment.electricityBillingMode || 'metered')) return `Invalid electricity mode for ${apartment.name}`;
+      if (!['equal-occupants', 'per-person-fixed'].includes(apartment.electricityOccupantBilling || 'equal-occupants') || !['equal-occupants', 'per-person-fixed'].includes(apartment.waterOccupantBilling || 'equal-occupants')) return `Invalid occupant allocation for ${apartment.name}`;
+      const fixedAmounts = [apartment.electricityFixedAmount, apartment.electricityPerPersonAmount, apartment.waterPerPersonAmount].filter((amount) => amount !== undefined);
+      if (fixedAmounts.some((amount) => !Number.isFinite(Number(amount)) || Number(amount) < 0)) return `Invalid fixed utility amount for ${apartment.name}`;
+    }
+  }
+  for (const customer of customers.filter((item) => item?.status === 'renting')) {
+    const rentalType = customerRentalType(customer);
+    if (!['whole-building-long-term', 'floor-long-term', 'room-long-term', 'bed-long-term'].includes(rentalType)) return 'Invalid long-term rental type';
+    if (['whole-building-long-term', 'floor-long-term', 'bed-long-term'].includes(rentalType) && (!Number.isFinite(Number(customer.rentAmount)) || Number(customer.rentAmount) <= 0)) return `Contract rent is required for ${customer.name || 'customer'}`;
+    if (!['scope', 'fixed'].includes(customer.electricityContractBilling || 'scope') || !['scope', 'fixed'].includes(customer.waterContractBilling || 'scope')) return `Invalid contract utility mode for ${customer.name || 'customer'}`;
+    if ((customer.electricityContractBilling === 'fixed' && (!Number.isFinite(Number(customer.electricityFixedAmount)) || Number(customer.electricityFixedAmount) < 0)) || (customer.waterContractBilling === 'fixed' && (!Number.isFinite(Number(customer.waterFixedAmount)) || Number(customer.waterFixedAmount) < 0))) return `Invalid contract utility amount for ${customer.name || 'customer'}`;
+    const building = buildings.find((item) => !customer.building ? (item.apartments || []).some((apartment) => apartment.name === customer.apartment) : item.name === customer.building);
+    if (!building) return `Rental building not found for ${customer.name || 'customer'}`;
+    const covered = (building.apartments || []).filter((apartment) => customerCoversApartment(customer, building, apartment));
+    if (!covered.length) return `Rental target not found for ${customer.name || 'customer'}`;
+    if (rentalType === 'floor-long-term' && !String(customer.floor ?? '').trim()) return 'Floor is required for floor rental';
+    if (rentalType === 'bed-long-term') {
+      const apartment = covered[0];
+      if (apartment.propertyType !== 'shared-room' || !Number.isInteger(Number(customer.bedNumber)) || Number(customer.bedNumber) < 1 || Number(customer.bedNumber) > Number(apartment.beds || 0)) return `Invalid bed rental for ${customer.name || 'customer'}`;
+    }
+    for (const apartment of covered) {
+      const key = `${building.name} | ${apartment.name}`;
+      const existing = claims.get(key) || [];
+      if (existing.some((claim) => rentalType !== 'bed-long-term' || claim.rentalType !== 'bed-long-term' || Number(claim.bedNumber) === Number(customer.bedNumber))) return `Rental target overlaps at ${key}`;
+      existing.push({ rentalType, bedNumber: customer.bedNumber });
+      claims.set(key, existing);
+    }
   }
   return '';
 }
@@ -440,6 +481,18 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function customerRentalType(customer) {
+  return customer?.rentalType || (customer?.sourceBookingId ? 'homestay-short-term' : 'room-long-term');
+}
+
+function customerCoversApartment(customer, building, apartment) {
+  if (!customer || customer.status !== 'renting' || (customer.building && String(customer.building).trim() !== String(building.name).trim())) return false;
+  const rentalType = customerRentalType(customer);
+  if (rentalType === 'whole-building-long-term') return true;
+  if (rentalType === 'floor-long-term') return String(customer.floor ?? '').trim() === String(apartment.floor ?? '').trim();
+  return ['room-long-term', 'bed-long-term'].includes(rentalType) && String(customer.apartment || '').trim() === String(apartment.name || '').trim();
+}
+
 function getAvailableApartments(state, requestedFrom = '', requestedTo = '') {
   const today = new Date().toISOString().slice(0, 10);
   const from = /^\d{4}-\d{2}-\d{2}$/.test(requestedFrom) ? requestedFrom : today;
@@ -456,12 +509,16 @@ function getAvailableApartments(state, requestedFrom = '', requestedTo = '') {
     customers = [];
   }
   if (!Array.isArray(buildings)) return [];
-  const rentedSpaces = new Set((Array.isArray(customers) ? customers : []).filter((customer) => customer.status === 'renting' && customer.apartment).map((customer) => `${String(customer.building || '').trim()} | ${String(customer.apartment).trim()}`));
   return buildings.flatMap((building) => {
     const apartments = Array.isArray(building.apartments) ? building.apartments : [];
     const spaces = apartments.length ? apartments : building.listingType === 'whole-building' && building.active !== false ? [{ name: building.name, title: building.name, propertyType: 'whole-building', status: 'empty', media: building.media, image: building.image }] : [];
     return spaces
-    .filter((apartment) => apartment.status === 'empty' && !rentedSpaces.has(`${String(building.name || '').trim()} | ${String(apartment.name || '').trim()}`) && !rentedSpaces.has(` | ${String(apartment.name || '').trim()}`) && !(apartment.propertyType === 'homestay' && Array.isArray(apartment.bookedDates) && requestedDates.some((date) => apartment.bookedDates.includes(date))))
+    .filter((apartment) => {
+      const renters = Array.isArray(customers) ? customers.filter((customer) => customerCoversApartment(customer, building, apartment)) : [];
+      const bedRenters = renters.filter((customer) => customerRentalType(customer) === 'bed-long-term');
+      const occupied = renters.some((customer) => customerRentalType(customer) !== 'bed-long-term') || (apartment.propertyType === 'shared-room' && bedRenters.length >= Number(apartment.beds || 0));
+      return !occupied && ['empty', 'rented'].includes(apartment.status) && !(apartment.propertyType === 'homestay' && Array.isArray(apartment.bookedDates) && requestedDates.some((date) => apartment.bookedDates.includes(date)));
+    })
     .map((apartment) => ({
       building: String(building.name || 'Phú Gia Land'),
       address: String(building.address || ''),
@@ -472,6 +529,7 @@ function getAvailableApartments(state, requestedFrom = '', requestedTo = '') {
       image: typeof apartment.image === 'string' && (apartment.image.startsWith('data:image/') || apartment.image.startsWith('/api/media/')) ? apartment.image : String(apartment.media?.find((item) => item.kind === 'image')?.url || ''),
       media: Array.isArray(apartment.media) ? apartment.media.filter((item) => item?.url && (item.kind === 'image' || item.kind === 'video')).map((item) => ({ kind: item.kind, url: item.url, mimeType: item.mimeType })) : [],
       beds: Number(apartment.beds || 0),
+      availableBeds: apartment.propertyType === 'shared-room' ? Math.max(Number(apartment.beds || 0) - (Array.isArray(customers) ? customers.filter((customer) => customerRentalType(customer) === 'bed-long-term' && customerCoversApartment(customer, building, apartment)).length : 0), 0) : undefined,
       bookedDates: Array.isArray(apartment.bookedDates) ? apartment.bookedDates.filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)).sort() : []
     }));
   });
@@ -677,6 +735,19 @@ function configuredAmount(...values) {
   return Number(configured ?? 0);
 }
 
+function monthlyServicesForApartment(building, apartment) {
+  return (building.services || [])
+    .filter((service) => {
+      if (service.billingMode !== 'monthly' || Number(service.amount || 0) <= 0) return false;
+      const targets = Array.isArray(service.scopeTargets) ? service.scopeTargets.map(String) : [];
+      if (service.scopeType === 'building' || service.scopeType === 'all') return true;
+      if (service.scopeType === 'floor') return targets.includes(String(apartment.floor));
+      if (service.scopeType === 'apartment') return targets.includes(String(apartment.name));
+      return false;
+    })
+    .map((service) => ({ id: service.id || '', label: service.name || 'Phí dịch vụ', amount: Number(service.amount), allocationBasis: ['contract', 'person'].includes(service.allocationBasis) ? service.allocationBasis : 'apartment' }));
+}
+
 function financialActor(request) {
   const session = getApplicationSession(request);
   return session ? { email: session.email, role: session.role } : { email: 'bank-webhook', role: 'system' };
@@ -739,35 +810,127 @@ async function getBankDirectory() {
   return banks;
 }
 
-async function closeUtilityInvoices(month = previousMonth()) {
+async function closeUtilityInvoicesUnlocked(month = previousMonth()) {
   const state = await readState();
   const buildings = parseStateValue(state, 'nvp-buildings', []);
   const customers = parseStateValue(state, 'nvp-customers', []);
   const meterLogs = parseStateValue(state, 'nvp-meter-logs', []);
   const invoices = parseStateValue(state, 'nvp-invoices', []);
   const created = [];
-  buildings.forEach((building) => (building.apartments || []).forEach((apartment) => {
-    const customer = customers.find((item) => item.status === 'renting' && String(item.apartment || '').trim() === String(apartment.name || '').trim() && (!item.building || String(item.building).trim() === String(building.name).trim()));
-    if (!customer || invoices.some((invoice) => invoice.month === month && invoice.building === building.name && invoice.apartment === apartment.name && invoice.source === 'monthly-closing')) return;
-    const records = meterLogs.filter((log) => log.month === month && log.apartment === `${building.name} | ${apartment.name}`);
-    const electricity = records.filter((log) => log.service === 'electricity').reduce((total, log) => total + Number(log.amount || 0), 0);
-    const configuredWaterMode = apartment.waterBillingMode || building.settings?.waterBillingMode || 'metered';
-    const meteredWater = records.filter((log) => log.service === 'water').reduce((total, log) => total + Number(log.amount || 0), 0);
-    const water = configuredWaterMode === 'fixed' ? configuredAmount(apartment.waterFixedAmount, (building.settings?.waterFloorRates || {})[apartment.floor], building.settings?.waterFixedAmount) : meteredWater;
-    const rent = Number(apartment.rentAmount || 0);
-    const service = configuredAmount(apartment.serviceFee, building.settings?.managementFee);
-    const amount = rent + electricity + water + service;
-    if (amount <= 0) return;
-    const invoice = { id: crypto.randomUUID(), paymentCode: `NVP-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`, building: building.name, apartment: apartment.name, tenantEmail: customer.email || '', tenantName: customer.name || '', title: `Hóa đơn tháng ${month} - ${apartment.name}`, type: 'monthly', source: 'monthly-closing', month, amount, billingLines: { rent, electricity, water, service, serviceLabel: apartment.serviceFeeLabel || 'Phí dịch vụ' }, utilityLines: { electricity, water }, dueDate: paymentDueDate(month, building.settings?.paymentDay), approvalStatus: 'pending', status: 'unpaid', createdAt: new Date().toISOString() };
-    invoices.push(invoice);
-    created.push(invoice);
-  }));
+  const sameCustomer = (left, right) => Boolean(left && right && ((left.id && right.id && left.id === right.id) || (left.email && right.email && left.email === right.email) || (!left.email && !right.email && left.name && left.name === right.name)));
+  const allocatedAmount = (amount, index, count) => Math.floor(Number(amount || 0) / count) + (index < Math.round(Number(amount || 0)) % count ? 1 : 0);
+  buildings.forEach((building) => {
+    const buildingCustomers = customers.filter((customer) => customer.status === 'renting' && customerRentalType(customer) !== 'homestay-short-term' && (customer.building === building.name || (!customer.building && (building.apartments || []).some((apartment) => apartment.name === customer.apartment))));
+    const customerForApartment = (apartment) => buildingCustomers.find((item) => customerCoversApartment(item, building, apartment));
+    const floorWaterAllocations = new Map();
+    const latestLogsByFloor = new Map();
+    meterLogs.filter((log) => log.month === month && log.service === 'water' && log.targetType === 'floor' && String(log.building || '').trim() === String(building.name || '').trim()).forEach((log) => {
+      latestLogsByFloor.set(String(log.floor ?? '').trim(), log);
+    });
+    latestLogsByFloor.forEach((log, floor) => {
+        const captured = Array.isArray(log.allocations) && log.allocations.length
+          ? log.allocations
+          : (Array.isArray(log.allocatedApartments) && log.allocatedApartments.length ? log.allocatedApartments.map((apartment) => ({ apartment })) : (building.apartments || []).filter((apartment) => String(apartment.floor ?? '').trim() === floor && customerForApartment(apartment)).map((apartment) => ({ apartment: apartment.name })));
+        const recipients = captured.filter((allocation) => (building.apartments || []).some((apartment) => apartment.name === allocation.apartment));
+        if (!recipients.length) return;
+        const total = Math.round(Number(log.amount || 0));
+        const baseAmount = Math.floor(total / recipients.length);
+        let remainder = total - (baseAmount * recipients.length);
+        recipients.forEach((allocation) => {
+          const apartment = (building.apartments || []).find((item) => item.name === allocation.apartment);
+          const currentCustomer = customerForApartment(apartment);
+          floorWaterAllocations.set(allocation.apartment, {
+            amount: baseAmount + (remainder > 0 ? 1 : 0),
+            customer: allocation.tenantEmail || allocation.tenantName ? { email: allocation.tenantEmail || '', name: allocation.tenantName || '' } : currentCustomer
+          });
+          remainder = Math.max(remainder - 1, 0);
+        });
+    });
+    const contracts = new Map();
+    (building.apartments || []).forEach((apartment) => {
+      const floorAllocation = floorWaterAllocations.get(apartment.name);
+      const records = meterLogs.filter((log) => log.month === month && log.apartment === `${building.name} | ${apartment.name}`);
+      const recordedWaterMode = records.filter((log) => log.service === 'water').at(-1)?.waterMode;
+      const configuredWaterMode = floorAllocation ? 'floor-metered' : (['metered', 'fixed'].includes(recordedWaterMode) ? recordedWaterMode : (building.settings?.waterBillingMode === 'floor-metered' ? 'floor-metered' : (apartment.waterBillingMode || building.settings?.waterBillingMode || 'metered')));
+      const hasFixedWaterContract = buildingCustomers.some((customer) => customerRentalType(customer) !== 'bed-long-term' && customer.waterContractBilling === 'fixed' && customerCoversApartment(customer, building, apartment));
+      if (configuredWaterMode === 'floor-metered' && !floorAllocation && !hasFixedWaterContract) return;
+      const bedCustomers = buildingCustomers.filter((customer) => customerRentalType(customer) === 'bed-long-term' && customerCoversApartment(customer, building, apartment));
+      const capturedCustomer = floorAllocation?.customer ? customers.find((customer) => sameCustomer(customer, floorAllocation.customer)) || floorAllocation.customer : null;
+      const recipients = bedCustomers.length ? bedCustomers : capturedCustomer ? [capturedCustomer] : buildingCustomers.filter((customer) => customerCoversApartment(customer, building, apartment));
+      if (!recipients.length) return;
+      const legacyUtilityInvoice = invoices.find((invoice) => invoice.month === month && invoice.building === building.name && invoice.apartment === apartment.name && invoice.type === 'utilities' && invoice.source !== 'monthly-closing');
+      const electricity = Number(legacyUtilityInvoice?.utilityLines?.electricity || 0) > 0 ? 0 : apartment.electricityBillingMode === 'fixed' ? Number(apartment.electricityFixedAmount || 0) : records.filter((log) => log.service === 'electricity').reduce((total, log) => total + Number(log.amount || 0), 0);
+      const meteredWater = records.filter((log) => log.service === 'water').reduce((total, log) => total + Number(log.amount || 0), 0);
+      const calculatedWater = configuredWaterMode === 'fixed'
+        ? (recordedWaterMode === 'fixed' ? meteredWater : configuredAmount(apartment.waterFixedAmount, (building.settings?.waterFloorRates || {})[apartment.floor], building.settings?.waterFixedAmount))
+        : configuredWaterMode === 'floor-metered' ? Number(floorAllocation?.amount || 0) : meteredWater;
+      const water = Number(legacyUtilityInvoice?.utilityLines?.water || 0) > 0 ? 0 : calculatedWater;
+      const legacyService = configuredAmount(apartment.serviceFee, building.settings?.managementFee);
+      const apartmentServices = monthlyServicesForApartment(building, apartment);
+      if (!apartmentServices.length && legacyService > 0) apartmentServices.push({ id: '', label: apartment.serviceFeeLabel || 'Phí dịch vụ', amount: legacyService, allocationBasis: 'apartment' });
+      recipients.forEach((customer, recipientIndex) => {
+        const key = customer.id || `snapshot:${customer.email || customer.name}:${apartment.name}`;
+        const contract = contracts.get(key) || { customer, apartments: [], electricity: 0, water: 0, serviceItems: [], allocationRules: {} };
+        contract.apartments.push(apartment);
+        const bedRental = customerRentalType(customer) === 'bed-long-term';
+        const electricityRule = bedRental && apartment.electricityOccupantBilling === 'per-person-fixed' ? 'per-person-fixed' : bedRental ? 'equal-occupants' : 'contract-scope';
+        const waterRule = bedRental && apartment.waterOccupantBilling === 'per-person-fixed' ? 'per-person-fixed' : bedRental ? 'equal-occupants' : 'contract-scope';
+        contract.electricity += electricityRule === 'per-person-fixed' ? Number(apartment.electricityPerPersonAmount || 0) : allocatedAmount(electricity, recipientIndex, recipients.length);
+        contract.water += waterRule === 'per-person-fixed' ? Number(apartment.waterPerPersonAmount || 0) : allocatedAmount(water, recipientIndex, recipients.length);
+        contract.allocationRules.electricity = electricityRule;
+        contract.allocationRules.water = waterRule;
+        if (bedRental) contract.allocationRules.occupants = recipients.length;
+        apartmentServices.forEach((item) => {
+          const amount = item.allocationBasis === 'person' ? item.amount : item.allocationBasis === 'contract' ? item.amount : allocatedAmount(item.amount, recipientIndex, recipients.length);
+          const existing = contract.serviceItems.find((service) => service.id === item.id && service.label === item.label);
+          if (existing) {
+            if (item.allocationBasis === 'apartment') existing.amount += amount;
+          } else contract.serviceItems.push({ ...item, amount });
+        });
+        contracts.set(key, contract);
+      });
+    });
+    contracts.forEach((contract) => {
+      const { customer } = contract;
+      const rentalType = customerRentalType(customer);
+      const apartment = contract.apartments[0];
+      if (rentalType !== 'bed-long-term' && customer.electricityContractBilling === 'fixed') {
+        contract.electricity = Number(customer.electricityFixedAmount || 0);
+        contract.allocationRules.electricity = 'contract-fixed';
+      }
+      if (rentalType !== 'bed-long-term' && customer.waterContractBilling === 'fixed') {
+        contract.water = Number(customer.waterFixedAmount || 0);
+        contract.allocationRules.water = 'contract-fixed';
+      }
+      const apartmentLabel = rentalType === 'whole-building-long-term' ? 'Toàn bộ tòa nhà' : rentalType === 'floor-long-term' ? `Tầng ${customer.floor}` : rentalType === 'bed-long-term' ? `${apartment.name} · Giường ${customer.bedNumber}` : apartment.name;
+      const duplicate = invoices.some((invoice) => invoice.month === month && invoice.building === building.name && invoice.source === 'monthly-closing' && ((customer.id && invoice.customerId === customer.id) || (!invoice.customerId && customer.email && invoice.tenantEmail === customer.email) || (!invoice.customerId && !customer.email && invoice.tenantName === customer.name && contract.apartments.some((item) => item.name === invoice.apartment))));
+      if (duplicate) return;
+      const rent = rentalType === 'room-long-term' && Number(customer.rentAmount || 0) <= 0 ? Number(apartment.rentAmount || 0) : Number(customer.rentAmount || 0);
+      const service = contract.serviceItems.reduce((total, item) => total + item.amount, 0);
+      const amount = rent + contract.electricity + contract.water + service;
+      if (amount <= 0) return;
+      const invoice = { id: crypto.randomUUID(), customerId: customer.id || '', paymentCode: `NVP-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`, building: building.name, apartment: apartmentLabel, coveredApartments: contract.apartments.map((item) => item.name), tenantEmail: customer.email || '', tenantName: customer.name || '', title: `Hóa đơn tháng ${month} - ${apartmentLabel}`, type: 'monthly', source: 'monthly-closing', month, amount, billingLines: { rent, electricity: contract.electricity, water: contract.water, service, serviceLabel: contract.serviceItems.length === 1 ? contract.serviceItems[0].label : 'Phí dịch vụ' }, serviceItems: contract.serviceItems.map(({ allocationBasis, ...item }) => item), allocationRules: { ...contract.allocationRules, services: contract.serviceItems.map((item) => ({ id: item.id, label: item.label, basis: item.allocationBasis })) }, utilityLines: { electricity: contract.electricity, water: contract.water }, dueDate: paymentDueDate(month, building.settings?.paymentDay), approvalStatus: 'pending', status: 'unpaid', createdAt: new Date().toISOString() };
+      invoices.push(invoice);
+      created.push(invoice);
+    });
+  });
   if (created.length) {
     state.updatedAt = new Date().toISOString();
     state.state['nvp-invoices'] = JSON.stringify(invoices);
     await writeState(state);
   }
   return created;
+}
+
+function closeUtilityInvoices(month = previousMonth()) {
+  return withStateMutation(() => closeUtilityInvoicesUnlocked(month));
+}
+
+function closedFloorReadingsChanged(current, incoming) {
+  if (!Object.hasOwn(incoming, 'nvp-meter-logs')) return false;
+  const closedPeriods = new Set(parseStateValue(current, 'nvp-invoices', []).filter((invoice) => invoice.source === 'monthly-closing').map((invoice) => `${invoice.building}\u0000${invoice.month}`));
+  const selectClosedLogs = (state) => parseStateValue(state, 'nvp-meter-logs', []).filter((log) => log.targetType === 'floor' && closedPeriods.has(`${log.building}\u0000${log.month}`));
+  return JSON.stringify(selectClosedLogs(current)) !== JSON.stringify(selectClosedLogs({ state: incoming }));
 }
 
 async function sendPushToEmail(state, email, title, body) {
@@ -874,7 +1037,7 @@ async function syncTuyaEnergyReadings(month = new Date().toISOString().slice(0, 
     const apartmentKey = `${building.name} | ${apartment.name}`;
     apartment.latestElectricityReading = reading.current;
     apartment.latestElectricityReadingAt = reading.timestamp;
-    const activeTenant = customers.some((customer) => customer.status === 'renting' && String(customer.apartment || '').trim() === String(apartment.name || '').trim() && (!customer.building || String(customer.building).trim() === String(building.name).trim()));
+    const activeTenant = customers.some((customer) => customerCoversApartment(customer, building, apartment));
     if (!activeTenant) { skipped.push({ meterId: reading.meterId, reason: 'Apartment has no active tenant', current: reading.current }); return; }
     const existing = meterLogs.find((log) => log.service === 'electricity' && log.meterId === reading.meterId && log.month === month);
     const previousLog = meterLogs.filter((log) => log.service === 'electricity' && log.meterId === reading.meterId && log !== existing).at(-1);
@@ -1341,7 +1504,7 @@ const server = http.createServer(async (request, response) => {
         const apartmentKey = `${building.name} | ${apartment.name}`;
         apartment.latestElectricityReading = reading.current;
         apartment.latestElectricityReadingAt = reading.timestamp;
-        const customer = customers.find((item) => String(item.apartment || '').trim() === String(apartment.name || '').trim() && (!item.building || String(item.building).trim() === String(building.name).trim()) && item.status === 'renting');
+        const customer = customers.find((item) => customerCoversApartment(item, building, apartment));
         if (!customer) { skipped.push({ meterId: reading.meterId, reason: 'Apartment has no active tenant', current: reading.current }); return; }
         const previousLog = meterLogs.filter((item) => item.service === 'electricity' && (item.meterId === reading.meterId || item.apartment === apartmentKey)).at(-1);
         const hasBaseline = apartment.electricityBaseline !== '' && apartment.electricityBaseline !== null && apartment.electricityBaseline !== undefined && Number.isFinite(Number(apartment.electricityBaseline));
@@ -1607,8 +1770,10 @@ const server = http.createServer(async (request, response) => {
       const state = await readState();
       const users = parseStateValue(state, 'nvp-users', []);
       const user = users.find((item) => String(item.email || '').toLowerCase() === email);
+      const customers = parseStateValue(state, 'nvp-customers', []);
+      const customer = customers.find((item) => item.id === user?.customerId || item.accountId === user?.id || (item.email && String(item.email).toLowerCase() === email));
       const notifications = parseStateValue(state, 'nvp-notifications', []).filter((item) => String(item.recipientEmail || '').toLowerCase() === email || item.audience === 'all-tenants');
-      const invoices = parseStateValue(state, 'nvp-invoices', []).filter((item) => item.approvalStatus !== 'pending' && String(item.tenantEmail || '').toLowerCase() === email);
+      const invoices = parseStateValue(state, 'nvp-invoices', []).filter((item) => item.approvalStatus !== 'pending' && ((customer?.id && item.customerId === customer.id) || String(item.tenantEmail || '').toLowerCase() === email));
       const feedback = parseStateValue(state, 'nvp-feedback', []).filter((item) => String(item.tenantEmail || '').toLowerCase() === email);
       sendJson(response, 200, { user: { name: user?.name || email, email }, notifications, invoices, feedback });
       return;
@@ -1695,12 +1860,19 @@ const server = http.createServer(async (request, response) => {
       if (validationError) { sendJson(response, 400, { error: validationError }); return; }
       const next = await withStateMutation(async () => {
         const current = await readState();
+        if (closedFloorReadingsChanged(current, incoming)) return { conflict: true };
         const state = filterIncomingStateForRole(incoming, tokenAuthorized ? 'owner' : session.role, current);
         const updated = { version: 1, updatedAt: new Date().toISOString(), state: { ...current.state, ...state } };
+        if (Object.prototype.hasOwnProperty.call(incoming, 'nvp-customers') || Object.prototype.hasOwnProperty.call(incoming, 'nvp-buildings')) {
+          const rentalError = validateRentalCustomers(updated);
+          if (rentalError) return { rentalError };
+        }
         await removeOrphanedMedia(current, updated);
         await writeState(updated);
         return updated;
       });
+      if (next.conflict) { sendJson(response, 409, { error: 'Không thể sửa chỉ số nước của tháng đã tạo hóa đơn' }); return; }
+      if (next.rentalError) { sendJson(response, 409, { error: next.rentalError }); return; }
       sendJson(response, 200, next);
       return;
     }

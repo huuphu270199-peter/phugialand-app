@@ -1,6 +1,6 @@
-const frontendCacheName = 'phu-gia-land-v67';
+const frontendCacheName = 'phu-gia-land-v76';
 if ('caches' in window) caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('phu-gia-land-') && key !== frontendCacheName).map((key) => caches.delete(key)))).catch(() => {});
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=67').then((registration) => registration.update()).catch((error) => console.warn('Tenant service worker registration failed:', error)));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js?v=76').then((registration) => registration.update()).catch((error) => console.warn('Tenant service worker registration failed:', error)));
 
 const loginSection = document.querySelector('[data-tenant-login]');
 const dashboardSection = document.querySelector('[data-tenant-dashboard]');
@@ -91,7 +91,11 @@ function renderPortal(payload) {
   document.querySelector('[data-tenant-invoices]').innerHTML = invoices.length ? invoices.map((invoice) => {
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
     const isOverdue = invoice.status !== 'paid' && dueDate && dueDate < new Date();
-    return `<article class="tenant-item invoice-item${isOverdue ? ' is-overdue' : ''}"><div><strong>${escapeHtml(invoice.title)}</strong><p>${dueDate ? `${isOverdue ? 'Đã quá hạn' : 'Hạn thanh toán'} ${dueDate.toLocaleDateString('vi-VN')}` : 'Không có hạn thanh toán'}</p></div><div class="item-value"><b>${formatMoney(invoice.amount)}</b><span class="status ${invoice.status === 'paid' ? 'paid' : isOverdue ? 'overdue' : 'unpaid'}">${invoice.status === 'paid' ? 'Đã thanh toán' : isOverdue ? 'Quá hạn' : 'Chưa thanh toán'}</span></div></article>`;
+    const occupants = Number(invoice.allocationRules?.occupants || 0);
+    const ruleLabel = (utility) => invoice.allocationRules?.[utility] === 'per-person-fixed' ? 'cố định/người' : invoice.allocationRules?.[utility] === 'equal-occupants' ? `chia đều ${occupants} người` : invoice.allocationRules?.[utility] === 'contract-fixed' ? 'cố định hợp đồng' : '';
+    const lines = invoice.billingLines ? [['Tiền thuê', invoice.billingLines.rent], [`Tiền điện${ruleLabel('electricity') ? ` · ${ruleLabel('electricity')}` : ''}`, invoice.billingLines.electricity], [`Tiền nước${ruleLabel('water') ? ` · ${ruleLabel('water')}` : ''}`, invoice.billingLines.water], ...(invoice.serviceItems || []).map((service) => [service.label || 'Phí dịch vụ', service.amount]), ...(Number(invoice.depositApplied || 0) > 0 ? [['Cọc đã khấu trừ', -Number(invoice.depositApplied)]] : [])].filter(([, amount]) => Number(amount || 0) !== 0) : [];
+    const breakdown = lines.length ? `<p>${lines.map(([label, amount]) => `${escapeHtml(label)}: ${formatMoney(amount)}`).join(' · ')}</p>` : '';
+    return `<article class="tenant-item invoice-item${isOverdue ? ' is-overdue' : ''}"><div><strong>${escapeHtml(invoice.title)}</strong>${breakdown}<p>${dueDate ? `${isOverdue ? 'Đã quá hạn' : 'Hạn thanh toán'} ${dueDate.toLocaleDateString('vi-VN')}` : 'Không có hạn thanh toán'}</p></div><div class="item-value"><b>${formatMoney(invoice.amount)}</b><span class="status ${invoice.status === 'paid' ? 'paid' : isOverdue ? 'overdue' : 'unpaid'}">${invoice.status === 'paid' ? 'Đã thanh toán' : isOverdue ? 'Quá hạn' : 'Chưa thanh toán'}</span></div></article>`;
   }).join('') : '<div class="empty"><strong>Chưa có hóa đơn</strong><span>Hóa đơn mới sẽ xuất hiện tại đây.</span></div>';
 
   document.querySelector('[data-tenant-notifications]').innerHTML = notifications.length ? notifications.map((notification) => `<article class="tenant-item notification-item"><span class="notification-mark" aria-hidden="true"></span><div><strong>${escapeHtml(notification.title)}</strong><p>${escapeHtml(notification.message)}</p><small>${new Date(notification.createdAt).toLocaleString('vi-VN')}</small></div></article>`).join('') : '<div class="empty"><strong>Chưa có thông báo</strong><span>Các cập nhật từ ban quản lý sẽ hiển thị tại đây.</span></div>';

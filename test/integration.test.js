@@ -113,6 +113,13 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     assert.ok(directory.payload.banks.some((bank) => bank.bin === '970433' && bank.shortName === 'VietBank'));
   });
 
+  test('frontend phone validation patterns compile with modern browser regex rules', async () => {
+    const source = await fs.readFile(path.join(root, 'app.js'), 'utf8');
+    const patterns = [...source.matchAll(/name="phone"[^>]*pattern="([^"]+)"/g)].map((match) => match[1].replaceAll('\\\\', '\\'));
+    assert.equal(patterns.length, 4);
+    patterns.forEach((pattern) => assert.doesNotThrow(() => new RegExp(`^(?:${pattern})$`, 'v')));
+  });
+
   test('owner authentication requires and completes first-login password change', async () => {
     assert.equal((await request('/api/login', { body: { email: owner.email, password: 'wrong-password' } })).response.status, 401);
     const result = await login('/api/login', owner, 'nvp_');
@@ -211,6 +218,19 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     assert.deepEqual(open.payload.apartments.map((item) => item.name), ['H201']);
   });
 
+  test('whole-building long-term rental removes every internal space from availability', async () => {
+    const state = await readState();
+    const customers = JSON.parse(state['nvp-customers']);
+    const originalCustomers = JSON.stringify(customers);
+    customers[0] = { ...customers[0], rentalType: 'whole-building-long-term', apartment: '', floor: '', rentAmount: 9000000 };
+    const updated = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-customers': JSON.stringify(customers) } } });
+    assert.equal(updated.response.status, 200);
+    const availability = await request('/api/availability?from=2026-09-16&to=2026-09-16');
+    assert.deepEqual(availability.payload.apartments, []);
+    const restored = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-customers': originalCustomers } } });
+    assert.equal(restored.response.status, 200);
+  });
+
   test('monthly close calculates fixed water, creates pending draft, and is idempotent', async () => {
     const first = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2026-08' } });
     assert.equal(first.response.status, 200);
@@ -239,6 +259,139 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     const invoice = invoices.find((item) => item.month === '2026-09');
     assert.deepEqual(invoice.billingLines, { rent: 5000000, electricity: 0, water: 0, service: 0, serviceLabel: 'Phí dịch vụ' });
     assert.equal(invoice.amount, 5000000);
+  });
+
+  test('monthly services are charged only when their configured scope matches', async () => {
+    const state = await readState();
+    const buildings = JSON.parse(state['nvp-buildings']);
+    buildings[0].apartments[0].serviceFee = 150000;
+    buildings[0].services = [
+      { id: 'management', name: 'Phí quản lý', billingMode: 'monthly', amount: 180000, scopeType: 'floor', scopeTargets: ['1'] },
+      { id: 'parking', name: 'Giữ xe', billingMode: 'monthly', amount: 90000, scopeType: 'floor', scopeTargets: ['2'] },
+      { id: 'repair', name: 'Sửa chữa', billingMode: 'manual', amount: 500000, scopeType: 'building', scopeTargets: [] }
+    ];
+    const updated = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-buildings': JSON.stringify(buildings) } } });
+    assert.equal(updated.response.status, 200);
+    const result = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2026-10' } });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.created, 1);
+    const invoices = JSON.parse((await readState())['nvp-invoices']);
+    const invoice = invoices.find((item) => item.month === '2026-10');
+    assert.equal(invoice.billingLines.service, 180000);
+    assert.deepEqual(invoice.serviceItems, [{ id: 'management', label: 'Phí quản lý', amount: 180000 }]);
+    assert.equal(invoice.amount, 5180000);
+  });
+
+  test('shared floor water is divided only among rented apartments without losing the remainder', async () => {
+    const state = await readState();
+    const buildings = JSON.parse(state['nvp-buildings']);
+    buildings[0].settings.waterBillingMode = 'floor-metered';
+    buildings[0].apartments[0].waterBillingMode = 'floor-metered';
+    buildings[0].apartments.push({ name: 'P102', floor: 1, status: 'rented', rentAmount: 4000000, waterBillingMode: 'floor-metered' });
+    buildings[0].apartments.push({ name: 'P103', floor: 1, status: 'empty', rentAmount: 3000000, waterBillingMode: 'floor-metered' });
+    const customers = JSON.parse(state['nvp-customers']);
+    customers.push({ id: 'customer-2', name: 'Khách P102', email: 'p102@test.local', building: 'Tòa Kiểm Thử', apartment: 'P102', status: 'renting' });
+    const meterLogs = JSON.parse(state['nvp-meter-logs']);
+    meterLogs.push({ month: '2026-11', building: 'Tòa Kiểm Thử', floor: '1', targetType: 'floor', service: 'water', amount: 300001 });
+    const updated = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: {
+      'nvp-buildings': JSON.stringify(buildings),
+      'nvp-customers': JSON.stringify(customers),
+      'nvp-meter-logs': JSON.stringify(meterLogs)
+    } } });
+    assert.equal(updated.response.status, 200);
+    const result = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2026-11' } });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.created, 2);
+    const invoices = JSON.parse((await readState())['nvp-invoices']).filter((invoice) => invoice.month === '2026-11');
+    assert.equal(invoices.find((invoice) => invoice.apartment === 'P101').billingLines.water, 150001);
+    assert.equal(invoices.find((invoice) => invoice.apartment === 'P102').billingLines.water, 150000);
+    assert.equal(invoices.some((invoice) => invoice.apartment === 'P103'), false);
+    assert.equal(invoices.reduce((total, invoice) => total + invoice.billingLines.water, 0), 300001);
+  });
+
+  test('shared floor mode waits for a floor reading before creating monthly invoices', async () => {
+    const result = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2026-12' } });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.created, 0);
+    const invoices = JSON.parse((await readState())['nvp-invoices']);
+    assert.equal(invoices.some((invoice) => invoice.month === '2026-12'), false);
+  });
+
+  test('shared floor water uses captured tenants and only the latest monthly floor record', async () => {
+    const state = await readState();
+    const buildings = JSON.parse(state['nvp-buildings']);
+    buildings[0].settings.waterBillingMode = 'metered';
+    buildings[0].apartments.forEach((apartment) => { apartment.waterBillingMode = 'metered'; });
+    buildings[0].apartments.find((apartment) => apartment.name === 'P101').floor = 2;
+    const customers = JSON.parse(state['nvp-customers']);
+    const originalTenant = customers.find((customer) => customer.apartment === 'P101');
+    originalTenant.status = 'moved';
+    customers.push({ id: 'customer-3', name: 'Khách mới P101', email: 'new-p101@test.local', building: 'Tòa Kiểm Thử', apartment: 'P101', status: 'renting' });
+    const meterLogs = JSON.parse(state['nvp-meter-logs']);
+    const allocations = [
+      { apartment: 'P101', tenantEmail: tenant.email, tenantName: 'Nguyễn Văn Test' },
+      { apartment: 'P102', tenantEmail: 'p102@test.local', tenantName: 'Khách P102' }
+    ];
+    meterLogs.push(
+      { month: '2027-01', building: 'Tòa Kiểm Thử', floor: '1', targetType: 'floor', service: 'water', amount: 100000, allocations },
+      { month: '2027-01', building: 'Tòa Kiểm Thử', floor: '1', targetType: 'floor', service: 'water', amount: 300000, allocations }
+    );
+    const updated = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: {
+      'nvp-buildings': JSON.stringify(buildings),
+      'nvp-customers': JSON.stringify(customers),
+      'nvp-meter-logs': JSON.stringify(meterLogs)
+    } } });
+    assert.equal(updated.response.status, 200);
+    const result = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2027-01' } });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.created, 2);
+    const invoices = JSON.parse((await readState())['nvp-invoices']).filter((invoice) => invoice.month === '2027-01');
+    assert.equal(invoices.find((invoice) => invoice.apartment === 'P101').tenantEmail, tenant.email);
+    assert.equal(invoices.find((invoice) => invoice.apartment === 'P101').billingLines.water, 150000);
+    assert.equal(invoices.reduce((total, invoice) => total + invoice.billingLines.water, 0), 300000);
+  });
+
+  test('concurrent monthly closing creates one set of drafts', async () => {
+    const state = await readState();
+    const meterLogs = JSON.parse(state['nvp-meter-logs']);
+    meterLogs.push({
+      month: '2027-02', building: 'Tòa Kiểm Thử', floor: '1', targetType: 'floor', service: 'water', amount: 200000,
+      allocations: [{ apartment: 'P102', tenantEmail: 'p102@test.local', tenantName: 'Khách P102' }]
+    });
+    const updated = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-meter-logs': JSON.stringify(meterLogs) } } });
+    assert.equal(updated.response.status, 200);
+    const results = await Promise.all([
+      request('/api/utilities/close', { cookie: staffCookie, body: { month: '2027-02' } }),
+      request('/api/utilities/close', { cookie: staffCookie, body: { month: '2027-02' } })
+    ]);
+    assert.deepEqual(results.map((result) => result.payload.created).sort((left, right) => left - right), [0, 2]);
+    const invoices = JSON.parse((await readState())['nvp-invoices']).filter((invoice) => invoice.month === '2027-02');
+    assert.equal(invoices.length, 2);
+    assert.equal(invoices.find((invoice) => invoice.apartment === 'P102').billingLines.water, 200000);
+    const closedState = await readState();
+    const changedLogs = JSON.parse(closedState['nvp-meter-logs']);
+    changedLogs.find((log) => log.month === '2027-02' && log.targetType === 'floor').amount = 999999;
+    const rejected = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-meter-logs': JSON.stringify(changedLogs) } } });
+    assert.equal(rejected.response.status, 409);
+  });
+
+  test('recorded apartment water survives a later switch to shared floor mode', async () => {
+    const state = await readState();
+    const buildings = JSON.parse(state['nvp-buildings']);
+    buildings[0].settings.waterBillingMode = 'floor-metered';
+    const meterLogs = JSON.parse(state['nvp-meter-logs']);
+    meterLogs.push({ month: '2027-03', apartment: 'Tòa Kiểm Thử | P101', service: 'water', waterMode: 'metered', amount: 80000 });
+    const updated = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: {
+      'nvp-buildings': JSON.stringify(buildings),
+      'nvp-meter-logs': JSON.stringify(meterLogs)
+    } } });
+    assert.equal(updated.response.status, 200);
+    const result = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2027-03' } });
+    assert.equal(result.response.status, 200);
+    const invoices = JSON.parse((await readState())['nvp-invoices']).filter((invoice) => invoice.month === '2027-03');
+    assert.equal(invoices.length, 1);
+    assert.equal(invoices[0].apartment, 'P101');
+    assert.equal(invoices[0].billingLines.water, 80000);
   });
 
   test('pending invoices are hidden from tenant portal', async () => {
@@ -378,6 +531,145 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     assert.equal(uploaded.response.status, 201);
     assert.match(uploaded.payload.media.fileName, /^TOA-TEST-P101-01\.png$/);
     assert.equal((await request(uploaded.payload.media.url)).response.status, 200);
+  });
+
+  test('monthly closing bills rental contracts and preserves remaining bed inventory', async () => {
+    const buildings = [
+      { name: 'Tòa Nguyên Căn', settings: { paymentDay: 5, waterBillingMode: 'metered' }, apartments: [{ name: 'NC1', floor: 1, status: 'rented', rentAmount: 3000000 }, { name: 'NC2', floor: 2, status: 'rented', rentAmount: 4000000 }] },
+      { name: 'Tòa Thuê Tầng', settings: { paymentDay: 5, waterBillingMode: 'floor-metered' }, services: [{ id: 'floor-service', name: 'Internet tầng', billingMode: 'monthly', amount: 500, scopeType: 'floor', scopeTargets: ['1'], allocationBasis: 'contract' }], apartments: [{ name: 'T101', floor: 1, status: 'rented', rentAmount: 3000000, electricityBillingMode: 'fixed', electricityFixedAmount: 100 }, { name: 'T102', floor: 1, status: 'rented', rentAmount: 4000000 }, { name: 'T201', floor: 2, status: 'empty', rentAmount: 5000000 }] },
+      { name: 'Tòa Giường', settings: { paymentDay: 5, waterBillingMode: 'metered' }, services: [{ id: 'bed-service', name: 'Dịch vụ người ở', billingMode: 'monthly', amount: 99, scopeType: 'building', allocationBasis: 'person' }], apartments: [{ name: 'G101', floor: 1, status: 'rented', propertyType: 'shared-room', beds: 3, rentAmount: 6000000, electricityOccupantBilling: 'per-person-fixed', electricityPerPersonAmount: 70000, waterOccupantBilling: 'equal-occupants' }] }
+    ];
+    const customers = [
+      { id: 'whole-customer', name: 'Khách nguyên căn', building: 'Tòa Nguyên Căn', rentalType: 'whole-building-long-term', rentAmount: 10000000, status: 'renting' },
+      { id: 'floor-customer', name: 'Khách thuê tầng', building: 'Tòa Thuê Tầng', floor: 1, rentalType: 'floor-long-term', rentAmount: 7000000, electricityContractBilling: 'fixed', electricityFixedAmount: 250, waterContractBilling: 'fixed', waterFixedAmount: 350, status: 'renting' },
+      { id: 'bed-customer-1', name: 'Khách giường 1', building: 'Tòa Giường', floor: 1, apartment: 'G101', bedNumber: 1, rentalType: 'bed-long-term', rentAmount: 2000000, status: 'renting' },
+      { id: 'bed-customer-2', name: 'Khách giường 2', building: 'Tòa Giường', floor: 1, apartment: 'G101', bedNumber: 2, rentalType: 'bed-long-term', rentAmount: 2100000, status: 'renting' }
+    ];
+    const currentState = await readState();
+    const meterLogs = [...JSON.parse(currentState['nvp-meter-logs']), { month: '2030-01', apartment: 'Tòa Giường | G101', service: 'electricity', amount: 101 }, { month: '2030-01', apartment: 'Tòa Giường | G101', service: 'water', waterMode: 'metered', amount: 103 }];
+    const seeded = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-buildings': JSON.stringify(buildings), 'nvp-customers': JSON.stringify(customers), 'nvp-meter-logs': JSON.stringify(meterLogs) } } });
+    assert.equal(seeded.response.status, 200, JSON.stringify(seeded.payload));
+
+    const availability = await request('/api/availability?from=2030-01-01&to=2030-01-01');
+    const sharedRoom = availability.payload.apartments.find((apartment) => apartment.name === 'G101');
+    assert.equal(sharedRoom.availableBeds, 1);
+    assert.equal(availability.payload.apartments.some((apartment) => ['NC1', 'NC2', 'T101', 'T102'].includes(apartment.name)), false);
+
+    const closed = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2030-01' } });
+    assert.equal(closed.response.status, 200);
+    assert.equal(closed.payload.created, 4);
+    const invoices = JSON.parse((await readState())['nvp-invoices']);
+    const wholeInvoice = invoices.find((invoice) => invoice.customerId === 'whole-customer');
+    const floorInvoice = invoices.find((invoice) => invoice.customerId === 'floor-customer');
+    const bedInvoices = invoices.filter((invoice) => invoice.customerId?.startsWith('bed-customer-'));
+    assert.equal(wholeInvoice.billingLines.rent, 10000000);
+    assert.deepEqual(wholeInvoice.coveredApartments, ['NC1', 'NC2']);
+    assert.equal(floorInvoice.billingLines.rent, 7000000);
+    assert.equal(floorInvoice.billingLines.electricity, 250);
+    assert.equal(floorInvoice.billingLines.water, 350);
+    assert.equal(floorInvoice.allocationRules.electricity, 'contract-fixed');
+    assert.equal(floorInvoice.billingLines.service, 500);
+    assert.deepEqual(floorInvoice.coveredApartments, ['T101', 'T102']);
+    assert.deepEqual(bedInvoices.map((invoice) => invoice.billingLines.electricity), [70000, 70000]);
+    assert.deepEqual(bedInvoices.map((invoice) => invoice.billingLines.water).sort((left, right) => left - right), [51, 52]);
+    assert.deepEqual(bedInvoices.map((invoice) => invoice.billingLines.service), [99, 99]);
+
+    const conflictingCustomers = [...customers, { id: 'bed-customer-3', name: 'Khách trùng giường', building: 'Tòa Giường', floor: 1, apartment: 'G101', bedNumber: 2, rentalType: 'bed-long-term', rentAmount: 1900000, status: 'renting' }];
+    const conflict = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: { 'nvp-customers': JSON.stringify(conflictingCustomers) } } });
+    assert.equal(conflict.response.status, 409);
+    assert.equal(JSON.parse((await readState())['nvp-customers']).length, customers.length);
+  });
+
+  test('rental billing matrix reconciles service allocation, tenant delivery, collection, and reversal', async () => {
+    const currentState = await readState();
+    const services = [
+      { id: 'contract-fee', name: 'Phí theo hợp đồng', billingMode: 'monthly', amount: 100, scopeType: 'building', allocationBasis: 'contract' },
+      { id: 'apartment-fee', name: 'Phí theo phòng', billingMode: 'monthly', amount: 50, scopeType: 'building', allocationBasis: 'apartment' },
+      { id: 'person-fee', name: 'Phí theo người', billingMode: 'monthly', amount: 25, scopeType: 'building', allocationBasis: 'person' }
+    ];
+    const buildings = [
+      {
+        name: 'E2E Nguyên Căn', settings: { paymentDay: 7, waterBillingMode: 'metered' }, services,
+        apartments: [
+          { name: 'NC101', floor: 1, status: 'rented', rentAmount: 600 },
+          { name: 'NC201', floor: 2, status: 'rented', rentAmount: 700 }
+        ]
+      },
+      {
+        name: 'E2E Tầng', settings: { paymentDay: 7, waterBillingMode: 'metered' }, services,
+        apartments: [
+          { name: 'T101', floor: 1, status: 'rented', rentAmount: 800 },
+          { name: 'T102', floor: 1, status: 'rented', rentAmount: 900 },
+          { name: 'T201', floor: 2, status: 'empty', rentAmount: 1000 }
+        ]
+      },
+      {
+        name: 'E2E Phòng', settings: { paymentDay: 7, waterBillingMode: 'metered' }, services,
+        apartments: [{ name: 'P101', floor: 1, status: 'rented', rentAmount: 3000 }]
+      },
+      {
+        name: 'E2E Giường', settings: { paymentDay: 7, waterBillingMode: 'metered' }, services,
+        apartments: [{ name: 'G101', floor: 1, status: 'rented', propertyType: 'shared-room', beds: 3, rentAmount: 1200, electricityOccupantBilling: 'equal-occupants', waterOccupantBilling: 'per-person-fixed', waterPerPersonAmount: 30 }]
+      }
+    ];
+    const customers = [
+      { id: 'e2e-whole', name: 'Khách E2E nguyên căn', building: 'E2E Nguyên Căn', rentalType: 'whole-building-long-term', rentAmount: 1000, status: 'renting' },
+      { id: 'e2e-floor', name: 'Khách E2E tầng', building: 'E2E Tầng', floor: 1, rentalType: 'floor-long-term', rentAmount: 2000, electricityContractBilling: 'fixed', electricityFixedAmount: 9, waterContractBilling: 'fixed', waterFixedAmount: 11, status: 'renting' },
+      { id: 'e2e-room', name: 'Khách E2E phòng', email: 'room-e2e@test.local', building: 'E2E Phòng', floor: 1, apartment: 'P101', rentalType: 'room-long-term', rentAmount: 0, status: 'renting' },
+      { id: 'e2e-bed-1', name: 'Khách E2E giường 1', building: 'E2E Giường', floor: 1, apartment: 'G101', bedNumber: 1, rentalType: 'bed-long-term', rentAmount: 400, status: 'renting' },
+      { id: 'e2e-bed-2', name: 'Khách E2E giường 2', building: 'E2E Giường', floor: 1, apartment: 'G101', bedNumber: 2, rentalType: 'bed-long-term', rentAmount: 500, status: 'renting' }
+    ];
+    const meterLogs = [...JSON.parse(currentState['nvp-meter-logs']),
+      { month: '2031-01', apartment: 'E2E Nguyên Căn | NC101', service: 'electricity', amount: 10 },
+      { month: '2031-01', apartment: 'E2E Nguyên Căn | NC101', service: 'water', waterMode: 'metered', amount: 30 },
+      { month: '2031-01', apartment: 'E2E Nguyên Căn | NC201', service: 'electricity', amount: 20 },
+      { month: '2031-01', apartment: 'E2E Nguyên Căn | NC201', service: 'water', waterMode: 'metered', amount: 40 },
+      { month: '2031-01', apartment: 'E2E Phòng | P101', service: 'electricity', amount: 13 },
+      { month: '2031-01', apartment: 'E2E Phòng | P101', service: 'water', waterMode: 'metered', amount: 17 },
+      { month: '2031-01', apartment: 'E2E Giường | G101', service: 'electricity', amount: 101 }
+    ];
+    const seeded = await request('/api/state', { cookie: ownerCookie, method: 'PUT', body: { state: {
+      'nvp-buildings': JSON.stringify(buildings),
+      'nvp-customers': JSON.stringify(customers),
+      'nvp-meter-logs': JSON.stringify(meterLogs),
+      'nvp-invoices': '[]',
+      'nvp-notifications': '[]',
+      'nvp-cashflow': '[]'
+    } } });
+    assert.equal(seeded.response.status, 200, JSON.stringify(seeded.payload));
+
+    const closed = await request('/api/utilities/close', { cookie: staffCookie, body: { month: '2031-01' } });
+    assert.equal(closed.response.status, 200);
+    assert.equal(closed.payload.created, 5);
+    const monthInvoices = JSON.parse((await readState())['nvp-invoices']).filter((invoice) => invoice.month === '2031-01');
+    const invoiceFor = (customerId) => monthInvoices.find((invoice) => invoice.customerId === customerId);
+    assert.deepEqual(invoiceFor('e2e-whole').billingLines, { rent: 1000, electricity: 30, water: 70, service: 225, serviceLabel: 'Phí dịch vụ' });
+    assert.deepEqual(invoiceFor('e2e-floor').billingLines, { rent: 2000, electricity: 9, water: 11, service: 225, serviceLabel: 'Phí dịch vụ' });
+    assert.deepEqual(invoiceFor('e2e-room').billingLines, { rent: 3000, electricity: 13, water: 17, service: 175, serviceLabel: 'Phí dịch vụ' });
+    assert.deepEqual([invoiceFor('e2e-bed-1').amount, invoiceFor('e2e-bed-2').amount], [631, 730]);
+    assert.equal(monthInvoices.reduce((total, invoice) => total + invoice.amount, 0), 8136);
+
+    const tenantAccount = await request('/api/tenant-users', { cookie: ownerCookie, body: { name: 'Cư dân E2E phòng', email: 'room-e2e@test.local', password: 'RoomTenant@123', customerId: 'e2e-room' } });
+    assert.equal(tenantAccount.response.status, 201);
+    const roomTenantCookie = (await login('/api/tenant-login', { email: 'room-e2e@test.local', password: 'RoomTenant@123' }, 'nvp_tenant_')).cookie;
+    assert.equal((await request('/api/tenant-portal', { cookie: roomTenantCookie })).payload.invoices.length, 0);
+
+    const roomInvoice = invoiceFor('e2e-room');
+    assert.equal((await request(`/api/invoices/${roomInvoice.id}/approve`, { cookie: ownerCookie, body: {} })).response.status, 200);
+    const portal = await request('/api/tenant-portal', { cookie: roomTenantCookie });
+    assert.deepEqual(portal.payload.invoices.map((invoice) => invoice.customerId), ['e2e-room']);
+    assert.deepEqual(portal.payload.invoices[0].serviceItems.map((item) => item.amount), [100, 50, 25]);
+
+    const collected = await request(`/api/invoices/${roomInvoice.id}/collect`, { cookie: staffCookie, body: { method: 'cash' } });
+    assert.equal(collected.response.status, 200);
+    assert.equal(collected.payload.cashflowEntry.amount, roomInvoice.amount);
+    const reversed = await request(`/api/invoices/${roomInvoice.id}/reverse`, { cookie: ownerCookie, body: { reason: 'Kiểm tra hoàn tác E2E' } });
+    assert.equal(reversed.response.status, 200);
+    const finalState = await readState();
+    const roomCashflow = JSON.parse(finalState['nvp-cashflow']).filter((entry) => entry.sourceId === roomInvoice.id);
+    assert.equal(roomCashflow.length, 2);
+    assert.equal(roomCashflow.reduce((total, entry) => total + (entry.type === 'income' ? entry.amount : -entry.amount), 0), 0);
+    assert.equal(JSON.parse(finalState['nvp-invoices']).find((invoice) => invoice.id === roomInvoice.id).status, 'unpaid');
   });
 
   test('push endpoint reports unavailable configuration without external calls', async () => {
