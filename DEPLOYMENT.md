@@ -111,6 +111,10 @@ DB_USER=<TEN_DATABASE_USER_DAY_DU>
 DB_PASSWORD=<MAT_KHAU_DATABASE>
 ```
 
+`NVP_ADMIN_PASSWORD` và `NVP_ADMIN_PASSWORD_CHANGE_REQUIRED` chỉ dùng để khởi tạo tài khoản chủ lần đầu. Sau khi đổi mật khẩu trong app, server lưu hash vào `NVP_DATA_DIRECTORY/owner-credentials.json`; file này phải được giữ nguyên khi deploy hoặc restart. Không đặt `NVP_DATA_DIRECTORY` bên trong thư mục source có thể bị ghi đè khi pull code.
+
+Sau khi thay đổi source hoặc biến môi trường, bấm **Restart** trong trang Node.js Application để Passenger nạp phiên bản mới.
+
 Tạo session secret trên máy cá nhân:
 
 ```bash

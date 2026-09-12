@@ -20,7 +20,7 @@ form.addEventListener('submit', async (event) => {
     sessionStorage.setItem('nvp-user-name', payload.name || '');
     window.location.assign(payload.passwordChangeRequired ? '/?change-password=required' : '/');
   } catch (error) {
-    errorMessage.textContent = error.message === 'Invalid credentials' ? 'Email hoặc mật khẩu không đúng.' : error.message === 'Too many attempts' ? 'Bạn đã thử quá nhiều lần. Vui lòng đợi 5 phút.' : 'Không thể đăng nhập. Kiểm tra kết nối máy chủ.';
+    errorMessage.textContent = error.message === 'Invalid credentials' ? 'Tên đăng nhập, email hoặc mật khẩu không đúng.' : error.message === 'Too many attempts' ? 'Bạn đã thử quá nhiều lần. Vui lòng đợi 5 phút.' : 'Không thể đăng nhập. Kiểm tra kết nối máy chủ.';
     errorMessage.hidden = false;
     submitButton.disabled = false;
     submitButton.textContent = 'Vào hệ thống';

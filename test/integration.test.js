@@ -8,7 +8,8 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const port = 4287;
 const baseUrl = `http://127.0.0.1:${port}`;
-const owner = { email: 'owner@test.local', password: 'OwnerPass@123456' };
+const bootstrapOwnerPassword = 'OwnerPass@123456';
+const owner = { email: 'owner@test.local', password: bootstrapOwnerPassword };
 const staff = { email: 'staff@test.local', password: 'StaffPass@123' };
 const tenant = { email: 'tenant@test.local', password: 'TenantPass@123' };
 const bankSecret = 'test-bank-webhook-secret';
@@ -59,6 +60,30 @@ async function waitForServer() {
   throw new Error('Test server did not start');
 }
 
+function startServer() {
+  serverProcess = spawn(process.execPath, ['server.js'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DB_HOST: '',
+      DB_PORT: '',
+      DB_NAME: '',
+      DB_USER: '',
+      DB_PASSWORD: '',
+      NVP_DATA_DIRECTORY: dataDirectory,
+      NVP_DISABLE_SCHEDULED_JOBS: 'true',
+      NVP_ADMIN_EMAIL: owner.email,
+      NVP_ADMIN_PASSWORD: bootstrapOwnerPassword,
+      NVP_ADMIN_PASSWORD_CHANGE_REQUIRED: 'true',
+      NVP_SESSION_SECRET: 'integration-test-session-secret-32-bytes',
+      NVP_BANK_WEBHOOK_SECRET: bankSecret,
+      NVP_API_TOKEN: 'integration-test-api-token'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+}
+
 async function readState(cookie = ownerCookie) {
   const result = await request('/api/state', { cookie });
   assert.equal(result.response.status, 200);
@@ -68,28 +93,7 @@ async function readState(cookie = ownerCookie) {
 describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
   before(async () => {
     dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'phu-gia-land-test-'));
-    serverProcess = spawn(process.execPath, ['server.js'], {
-      cwd: root,
-      env: {
-        ...process.env,
-        PORT: String(port),
-        DB_HOST: '',
-        DB_PORT: '',
-        DB_NAME: '',
-        DB_USER: '',
-        DB_PASSWORD: '',
-        NVP_DATA_DIRECTORY: dataDirectory,
-        NVP_ENV_FILE: path.join(dataDirectory, '.env.test'),
-        NVP_DISABLE_SCHEDULED_JOBS: 'true',
-        NVP_ADMIN_EMAIL: owner.email,
-        NVP_ADMIN_PASSWORD: owner.password,
-        NVP_ADMIN_PASSWORD_CHANGE_REQUIRED: 'true',
-        NVP_SESSION_SECRET: 'integration-test-session-secret-32-bytes',
-        NVP_BANK_WEBHOOK_SECRET: bankSecret,
-        NVP_API_TOKEN: 'integration-test-api-token'
-      },
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
+    startServer();
     await waitForServer();
   });
 
@@ -121,8 +125,21 @@ describe('Phu Gia Land integration workflows', { concurrency: false }, () => {
     ownerCookie = nextLogin.cookie;
     assert.equal(nextLogin.payload.passwordChangeRequired, false);
     assert.equal((await request('/api/state', { cookie: ownerCookie })).response.status, 200);
-    const isolatedEnvironment = await fs.readFile(path.join(dataDirectory, '.env.test'), 'utf8');
-    assert.match(isolatedEnvironment, /NVP_ADMIN_PASSWORD_CHANGE_REQUIRED="false"/);
+    const storedCredentials = JSON.parse(await fs.readFile(path.join(dataDirectory, 'owner-credentials.json'), 'utf8'));
+    assert.equal(storedCredentials.passwordChangeRequired, false);
+    assert.ok(storedCredentials.passwordHash.includes(':'));
+    assert.equal(JSON.stringify(storedCredentials).includes(newPassword), false);
+  });
+
+  test('changed owner password survives restart with bootstrap environment unchanged', async () => {
+    serverProcess.kill();
+    await new Promise((resolve) => serverProcess.once('exit', resolve));
+    startServer();
+    await waitForServer();
+    assert.equal((await request('/api/login', { body: { email: owner.email, password: bootstrapOwnerPassword } })).response.status, 401);
+    const result = await login('/api/login', owner, 'nvp_');
+    ownerCookie = result.cookie;
+    assert.equal(result.payload.passwordChangeRequired, false);
   });
 
   test('owner can seed isolated operational state and unknown keys are discarded', async () => {

@@ -36,8 +36,11 @@ const maxBodyBytes = 100_000_000;
 const root = __dirname;
 const dataDirectory = process.env.NVP_DATA_DIRECTORY ? path.resolve(process.env.NVP_DATA_DIRECTORY) : path.join(root, 'data');
 const dataFile = path.join(dataDirectory, 'state.json');
+const ownerCredentialsFile = path.join(dataDirectory, 'owner-credentials.json');
 const documentDirectory = path.join(dataDirectory, 'documents');
 const mediaDirectory = path.join(dataDirectory, 'media');
+let adminPasswordHash = '';
+let ownerCredentialsLoaded = false;
 const databaseSettings = {
   host: process.env.DB_HOST || '',
   port: Number(process.env.DB_PORT || 3306),
@@ -200,6 +203,19 @@ function filterIncomingStateForRole(incoming, role, currentState) {
 
 function isAdministratorPasswordChangeRequired() {
   return adminPasswordChangeRequired;
+}
+
+async function loadOwnerCredentials() {
+  if (ownerCredentialsLoaded) return;
+  try {
+    const stored = JSON.parse(await fs.readFile(ownerCredentialsFile, 'utf8'));
+    if (!stored.passwordHash || typeof stored.passwordChangeRequired !== 'boolean') throw new Error('Invalid owner credentials file');
+    adminPasswordHash = stored.passwordHash;
+    adminPasswordChangeRequired = stored.passwordChangeRequired;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  ownerCredentialsLoaded = true;
 }
 
 function getTenantEmail(request) {
@@ -522,6 +538,20 @@ function verifyPassword(password, storedHash) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
+function verifyAdministratorPassword(password) {
+  return adminPasswordHash ? verifyPassword(password, adminPasswordHash) : hasMatchingSecret(password, adminPassword);
+}
+
+async function writeOwnerCredentials(password, passwordChangeRequired) {
+  await fs.mkdir(dataDirectory, { recursive: true });
+  const temporaryFile = `${ownerCredentialsFile}.${crypto.randomUUID()}.tmp`;
+  const credentials = { passwordHash: hashPassword(password), passwordChangeRequired };
+  await fs.writeFile(temporaryFile, JSON.stringify(credentials, null, 2), { encoding: 'utf8', mode: 0o600 });
+  await fs.rename(temporaryFile, ownerCredentialsFile);
+  adminPasswordHash = credentials.passwordHash;
+  adminPasswordChangeRequired = passwordChangeRequired;
+}
+
 function getTuyaDataCenter(config = {}) {
   if (tuyaDataCenters[config.tuyaDataCenter]) return config.tuyaDataCenter;
   const endpoint = String(config.tuyaEndpoint || '');
@@ -530,20 +560,6 @@ function getTuyaDataCenter(config = {}) {
 
 function getTuyaEndpoint(config = {}) {
   return tuyaDataCenters[getTuyaDataCenter(config)].endpoint;
-}
-
-async function updateEnvironmentVariable(name, value) {
-  const environmentFile = process.env.NVP_ENV_FILE ? path.resolve(process.env.NVP_ENV_FILE) : path.join(root, '.env');
-  const assignment = `${name}=${JSON.stringify(value)}`;
-  let contents = '';
-  try {
-    contents = await fs.readFile(environmentFile, 'utf8');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-  const expression = new RegExp(`^${name}=.*$`, 'm');
-  const updated = expression.test(contents) ? contents.replace(expression, assignment) : `${contents}${contents && !contents.endsWith('\n') ? '\n' : ''}${assignment}\n`;
-  await fs.writeFile(environmentFile, updated, 'utf8');
 }
 
 async function restoreBackupArchive(dataUrl) {
@@ -825,6 +841,7 @@ const server = http.createServer(async (request, response) => {
       await serveStatic(request, response);
       return;
     }
+    await loadOwnerCredentials();
     if (request.method === 'GET' && request.url === '/api/health') {
       sendJson(response, 200, { ok: true, service: 'phu-gia-land-api', host: getRequestHost(request), forwardedHost: String(request.headers['x-forwarded-host'] || '') });
       return;
@@ -1243,7 +1260,7 @@ const server = http.createServer(async (request, response) => {
       const rateLimit = loginRateLimit(request, email, 'application');
       let role = '';
       let name = '';
-      if (email === adminEmail.toLowerCase() && hasMatchingSecret(password, adminPassword)) {
+      if (email === adminEmail.toLowerCase() && verifyAdministratorPassword(password)) {
         role = 'owner';
         name = 'Chủ nhà';
       } else {
@@ -1268,15 +1285,10 @@ const server = http.createServer(async (request, response) => {
       const payload = await readBody(request);
       const currentPassword = String(payload.currentPassword || '');
       const newPassword = String(payload.newPassword || '');
-      if (!hasMatchingSecret(currentPassword, adminPassword)) { sendJson(response, 400, { error: 'Current password is incorrect' }); return; }
+      if (!verifyAdministratorPassword(currentPassword)) { sendJson(response, 400, { error: 'Current password is incorrect' }); return; }
       if (newPassword.length < 12 || /[\r\n]/.test(newPassword)) { sendJson(response, 400, { error: 'New password must contain at least 12 characters' }); return; }
       try {
-        await updateEnvironmentVariable('NVP_ADMIN_PASSWORD', newPassword);
-        await updateEnvironmentVariable('NVP_ADMIN_PASSWORD_CHANGE_REQUIRED', 'false');
-        adminPassword = newPassword;
-        adminPasswordChangeRequired = false;
-        process.env.NVP_ADMIN_PASSWORD = newPassword;
-        process.env.NVP_ADMIN_PASSWORD_CHANGE_REQUIRED = 'false';
+        await writeOwnerCredentials(newPassword, false);
         sendJson(response, 200, { ok: true });
       } catch (error) {
         console.error('Unable to update administrator password:', error);
